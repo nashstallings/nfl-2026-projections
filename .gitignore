@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Downloaded nflverse source data. Rebuilt on demand by build_baseline; the
+# generated baseline.json is committed, the raw CSVs are not.
+.cache/
+
+# Node — only used to run the model's tests, there is no build step.
+node_modules/
+
+# Credentials. Nothing in this repo should ever hold a key: the server uses
+# application-default credentials from the machine it runs on.
+*-key.json
+service-account*.json
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

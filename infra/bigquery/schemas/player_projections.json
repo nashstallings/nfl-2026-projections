@@ -1,0 +1,36 @@
+[
+  {"name": "saved_at", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "When this save was made; the table's partition key."},
+  {"name": "save_id", "type": "STRING", "mode": "REQUIRED", "description": "One click of Save. Every row written together shares it."},
+  {"name": "label", "type": "STRING", "mode": "NULLABLE", "description": "Optional name for the save, e.g. 'post free agency'."},
+  {"name": "projection_season", "type": "INTEGER", "mode": "REQUIRED"},
+  {"name": "team", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "player_id", "type": "STRING", "mode": "REQUIRED", "description": "nflverse gsis_id, joinable to the source stats."},
+  {"name": "player", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "position", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "games", "type": "INTEGER", "mode": "NULLABLE"},
+
+  {"name": "share_pass", "type": "FLOAT", "mode": "NULLABLE", "description": "Input: share of team pass attempts assigned to this player."},
+  {"name": "share_rush", "type": "FLOAT", "mode": "NULLABLE", "description": "Input: share of team carries."},
+  {"name": "share_recv", "type": "FLOAT", "mode": "NULLABLE", "description": "Input: share of team targets."},
+  {"name": "team_pass_attempts", "type": "INTEGER", "mode": "NULLABLE", "description": "Input: the team volume the shares divide."},
+  {"name": "team_carries", "type": "INTEGER", "mode": "NULLABLE"},
+  {"name": "team_targets", "type": "INTEGER", "mode": "NULLABLE"},
+
+  {"name": "pass_attempts", "type": "FLOAT", "mode": "NULLABLE"},
+  {"name": "completions", "type": "FLOAT", "mode": "NULLABLE"},
+  {"name": "passing_yards", "type": "FLOAT", "mode": "NULLABLE"},
+  {"name": "passing_tds", "type": "FLOAT", "mode": "NULLABLE"},
+  {"name": "interceptions", "type": "FLOAT", "mode": "NULLABLE"},
+  {"name": "carries", "type": "FLOAT", "mode": "NULLABLE"},
+  {"name": "rushing_yards", "type": "FLOAT", "mode": "NULLABLE"},
+  {"name": "rushing_tds", "type": "FLOAT", "mode": "NULLABLE"},
+  {"name": "targets", "type": "FLOAT", "mode": "NULLABLE"},
+  {"name": "receptions", "type": "FLOAT", "mode": "NULLABLE"},
+  {"name": "receiving_yards", "type": "FLOAT", "mode": "NULLABLE"},
+  {"name": "receiving_tds", "type": "FLOAT", "mode": "NULLABLE"},
+  {"name": "fumbles_lost", "type": "FLOAT", "mode": "NULLABLE"},
+
+  {"name": "fantasy_points_std", "type": "FLOAT", "mode": "NULLABLE"},
+  {"name": "fantasy_points_half_ppr", "type": "FLOAT", "mode": "NULLABLE"},
+  {"name": "fantasy_points_ppr", "type": "FLOAT", "mode": "NULLABLE"}
+]
