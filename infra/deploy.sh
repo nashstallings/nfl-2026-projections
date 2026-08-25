@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Deploy the dashboard to Cloud Run.
 #
-# Run from Cloud Shell, or anywhere gcloud is authenticated. Creates the runtime
-# service account and its BigQuery grants on first run, then builds and deploys.
+# Run from Cloud Shell, or anywhere gcloud is authenticated. Expects
+# ./infra/bootstrap.sh to have run first — it checks for what that creates
+# rather than creating it, so this path and the GitHub Actions one cannot drift.
 #
 #   ALLOWED_EMAILS=you@gmail.com GOOGLE_CLIENT_ID=...apps.googleusercontent.com \
 #     ./infra/deploy.sh
