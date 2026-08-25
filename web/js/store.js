@@ -12,6 +12,8 @@
  * guarded and the app runs — losing only persistence — when it fails.
  */
 
+import { authHeader } from "./auth.js";
+
 const KEY = "nfl-2026-projections/v1";
 
 function readRaw() {
@@ -74,7 +76,7 @@ export async function saveRemote(payload) {
   try {
     const response = await fetch("/api/projections", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeader() },
       body: JSON.stringify(payload),
     });
     const body = await response.json().catch(() => ({}));
@@ -83,17 +85,15 @@ export async function saveRemote(payload) {
     }
     return { ok: true, ...body };
   } catch {
-    return {
-      ok: false,
-      error:
-        "could not reach the local server — start it with `python -m projections.server`",
-    };
+    return { ok: false, error: "could not reach the server" };
   }
 }
 
 export async function listSaves() {
   try {
-    const response = await fetch("/api/projections/saves");
+    const response = await fetch("/api/projections/saves", {
+      headers: authHeader(),
+    });
     if (!response.ok) return [];
     const body = await response.json();
     return body.saves || [];

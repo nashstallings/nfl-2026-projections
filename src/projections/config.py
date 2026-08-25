@@ -36,6 +36,13 @@ class Settings:
     # local case — writes are open, because the socket is already private.
     api_token: str = os.environ.get("API_TOKEN", "")
 
+    # Google sign-in. The client id is public by design — it identifies the app
+    # to Google and is served to the page — and carries no secret. The allow
+    # list is what actually decides who may write; sign-in with an empty list
+    # permits nobody, which is the safe way for a misconfiguration to fail.
+    google_client_id: str = os.environ.get("GOOGLE_CLIENT_ID", "")
+    allowed_emails: str = os.environ.get("ALLOWED_EMAILS", "")
+
     # Lets the UI run without a project configured: saves are refused with a
     # clear message instead of failing halfway through a BigQuery call.
     bigquery_enabled: bool = _flag("BIGQUERY_ENABLED", True)

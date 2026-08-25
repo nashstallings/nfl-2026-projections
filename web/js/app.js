@@ -16,6 +16,7 @@ import {
   seedAllocations,
   seedVolume,
 } from "./projection.js";
+import { initAuth, onChange as onAuthChange, status as authStatus } from "./auth.js";
 import {
   debounce,
   downloadJson,
@@ -407,6 +408,11 @@ async function save() {
     banner("Nothing to save yet — project at least one team first.", "error");
     return;
   }
+  const auth = authStatus();
+  if (auth.required && !auth.signedIn) {
+    banner("Sign in with Google to save — your work is already kept in this browser.", "error");
+    return;
+  }
   const button = $("save-btn");
   button.disabled = true;
   button.textContent = "Saving…";
@@ -429,6 +435,21 @@ async function save() {
 }
 
 // -- wiring ----------------------------------------------------------------
+
+function renderIdentity(auth) {
+  const label = $("identity");
+  const button = $("save-btn");
+  if (!auth.configured) {
+    label.hidden = true;
+    button.title = "";
+    return;
+  }
+  label.hidden = !auth.signedIn;
+  label.textContent = auth.email || "";
+  // Left clickable when signed out so the reason lands in the banner, where
+  // there is room to say what to do about it, rather than in a tooltip.
+  button.title = auth.signedIn ? "" : "Sign in with Google to save";
+}
 
 function switchView(view) {
   app.view = view;
@@ -456,6 +477,19 @@ async function boot() {
 
   const stored = loadLocal();
   if (stored?.teams) app.state = stored;
+
+  onAuthChange(renderIdentity);
+  try {
+    const config = await (await fetch("/api/config")).json();
+    await initAuth(
+      { clientId: config.google_client_id, required: config.auth_required },
+      $("signin-button"),
+    );
+  } catch (error) {
+    // A dashboard that cannot reach its own config is still a usable
+    // dashboard — only saving depends on it.
+    banner(error.message || "Could not set up Google sign-in.", "error");
+  }
 
   const codes = Object.keys(app.baseline.teams).sort();
   $("team-select").innerHTML = codes

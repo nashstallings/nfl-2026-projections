@@ -25,7 +25,7 @@ from fastapi import Body, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import bigquery_store
+from . import auth, bigquery_store
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -37,13 +37,12 @@ DATA_DIR = ROOT / "data"
 app = FastAPI(title="NFL 2026 Projections", docs_url=None, redoc_url=None)
 
 
-def require_token(authorization: str | None) -> None:
-    """No token configured means local use, where the loopback bind is the wall."""
-    if not settings.api_token:
-        return
-    expected = f"Bearer {settings.api_token}"
-    if authorization != expected:
-        raise HTTPException(status_code=401, detail="invalid or missing API token")
+def require_identity(authorization: str | None) -> str:
+    """Identify a caller allowed to write, or refuse with a reason they can act on."""
+    try:
+        return auth.authorize(authorization)
+    except auth.AuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
 @app.get("/api/healthz")
@@ -52,6 +51,21 @@ def healthz() -> dict[str, Any]:
         "ok": True,
         "bigquery_enabled": settings.bigquery_enabled,
         "table": settings.table_id if settings.bigquery_enabled else None,
+    }
+
+
+@app.get("/api/config")
+def client_config() -> dict[str, Any]:
+    """What the page needs to know before it can offer to sign anyone in.
+
+    The client id is deliberately public — it names the app to Google and is
+    useless without a matching account on the allow list. The allow list itself
+    is never served: who may write is the server's business.
+    """
+    return {
+        "google_client_id": settings.google_client_id,
+        "auth_required": auth.auth_required(),
+        "bigquery_enabled": settings.bigquery_enabled,
     }
 
 
@@ -72,7 +86,7 @@ def save_projections(
     payload: dict[str, Any] = Body(...),
     authorization: str | None = Header(default=None),
 ) -> JSONResponse:
-    require_token(authorization)
+    identity = require_identity(authorization)
     if not settings.bigquery_enabled:
         raise HTTPException(
             status_code=503,
@@ -85,12 +99,17 @@ def save_projections(
         # save is recoverable — say what went wrong rather than returning a 500.
         logger.warning("save failed: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    logger.info("saved %s rows as %s", result["rows"], result["save_id"])
+    logger.info(
+        "saved %s rows as %s for %s", result["rows"], result["save_id"], identity
+    )
     return JSONResponse(result)
 
 
 @app.get("/api/projections/saves")
-def saves(limit: int = 25) -> dict[str, Any]:
+def saves(
+    limit: int = 25, authorization: str | None = Header(default=None)
+) -> dict[str, Any]:
+    require_identity(authorization)
     if not settings.bigquery_enabled:
         return {"saves": [], "bigquery_enabled": False}
     try:
@@ -100,7 +119,10 @@ def saves(limit: int = 25) -> dict[str, Any]:
 
 
 @app.get("/api/projections/latest")
-def latest(save_id: str | None = None) -> dict[str, Any]:
+def latest(
+    save_id: str | None = None, authorization: str | None = Header(default=None)
+) -> dict[str, Any]:
+    require_identity(authorization)
     if not settings.bigquery_enabled:
         return {"rows": [], "bigquery_enabled": False}
     try:

@@ -263,3 +263,18 @@ tfoot .under { color: var(--warn); }
 tfoot .exact { color: var(--good); }
 
 .empty { padding: 30px; text-align: center; color: var(--ink-faint); font-size: 13px; }
+
+/* -- identity ----------------------------------------------------------- */
+
+.identity {
+  font-size: 12px;
+  color: var(--ink-soft);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Google renders its own button here; it only needs somewhere to sit, and to
+   disappear entirely when sign-in is not configured. */
+#signin-button:empty { display: none; }

@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from projections import bigquery_store, server  # noqa: E402
+from projections import auth, bigquery_store, server  # noqa: E402
 
 
 @pytest.fixture
@@ -32,9 +32,13 @@ def configured(**overrides):
 
     Settings is frozen — deliberately, since a value that can be reassigned at
     runtime is a value you cannot reason about — so a test replaces the whole
-    object rather than poking a field on it.
+    object rather than poking a field on it. Both modules that read settings get
+    the same replacement, since a request crosses both.
     """
-    with patch.object(server, "settings", replace(server.settings, **overrides)):
+    swapped = replace(server.settings, **overrides)
+    with patch.object(server, "settings", swapped), patch.object(
+        auth, "settings", swapped
+    ):
         yield
 
 
@@ -87,33 +91,85 @@ class TestSaving:
         assert "BIGQUERY_ENABLED" in response.json()["detail"]
 
 
-class TestTokenGate:
-    def test_no_token_configured_means_writes_are_open(self):
-        with configured(api_token=""):
-            server.require_token(None)  # local use: must not raise
+class TestAuthorization:
+    """The HTTP surface of the gate. Which credentials count is test_auth.py."""
 
-    def test_a_configured_token_is_required(self):
-        with configured(api_token="s3cret"):
-            with pytest.raises(server.HTTPException) as caught:
-                server.require_token(None)
-            assert caught.value.status_code == 401
+    def test_writes_are_open_when_nothing_is_configured(self, client):
+        fake = {"save_id": "a", "saved_at": "now", "rows": 1, "table": "t"}
+        with configured(
+            api_token="", google_client_id="", bigquery_enabled=True
+        ), patch.object(bigquery_store, "save", return_value=fake):
+            assert client.post("/api/projections", json=SAVE).status_code == 200
 
-    def test_the_right_token_passes(self):
-        with configured(api_token="s3cret"):
-            server.require_token("Bearer s3cret")
-
-    def test_a_wrong_token_is_rejected(self):
-        with configured(api_token="s3cret"), pytest.raises(server.HTTPException):
-            server.require_token("Bearer guess")
-
-    def test_a_gated_endpoint_rejects_an_unauthenticated_write(self, client):
+    def test_an_unauthenticated_write_is_refused(self, client):
         with configured(api_token="s3cret", bigquery_enabled=True):
-            assert client.post("/api/projections", json=SAVE).status_code == 401
+            response = client.post("/api/projections", json=SAVE)
+        assert response.status_code == 401
+        assert "bearer" in response.json()["detail"].lower()
+
+    def test_a_valid_token_gets_through(self, client):
+        fake = {"save_id": "a", "saved_at": "now", "rows": 1, "table": "t"}
+        with configured(api_token="s3cret", bigquery_enabled=True), patch.object(
+            bigquery_store, "save", return_value=fake
+        ):
+            response = client.post(
+                "/api/projections",
+                json=SAVE,
+                headers={"Authorization": "Bearer s3cret"},
+            )
+        assert response.status_code == 200
+
+    def test_the_refusal_says_why(self, client):
+        """A 401 with no reason is a support request; this one is actionable."""
+        with configured(
+            google_client_id="app.apps.googleusercontent.com",
+            api_token="",
+            allowed_emails="",
+            bigquery_enabled=True,
+        ), patch(
+            "google.oauth2.id_token.verify_oauth2_token",
+            side_effect=ValueError("Token expired"),
+        ):
+            response = client.post(
+                "/api/projections", json=SAVE, headers={"Authorization": "Bearer old"}
+            )
+        assert response.status_code == 401
+        assert "invalid Google token" in response.json()["detail"]
+
+    def test_reading_saved_projections_is_gated_too(self, client):
+        """Saved projections are the user's data, not public NFL data."""
+        with configured(api_token="s3cret", bigquery_enabled=True):
+            assert client.get("/api/projections/saves").status_code == 401
+            assert client.get("/api/projections/latest").status_code == 401
+
+
+class TestClientConfig:
+    def test_the_page_is_told_the_client_id_and_whether_to_sign_in(self, client):
+        with configured(
+            google_client_id="app.apps.googleusercontent.com",
+            allowed_emails="me@example.com",
+        ):
+            body = client.get("/api/config").json()
+        assert body["google_client_id"] == "app.apps.googleusercontent.com"
+        assert body["auth_required"] is True
+
+    def test_the_allow_list_is_never_served_to_the_page(self, client):
+        with configured(
+            google_client_id="app.apps.googleusercontent.com",
+            allowed_emails="me@example.com",
+        ):
+            body = client.get("/api/config").json()
+        assert "allowed_emails" not in body
+        assert "me@example.com" not in str(body)
+
+    def test_locally_the_page_is_told_no_sign_in_is_needed(self, client):
+        with configured(google_client_id="", api_token=""):
+            assert client.get("/api/config").json()["auth_required"] is False
 
 
 class TestReads:
     def test_listing_saves_is_empty_rather_than_an_error_when_disabled(self, client):
-        with configured(bigquery_enabled=False):
+        with configured(bigquery_enabled=False, api_token="", google_client_id=""):
             body = client.get("/api/projections/saves").json()
         assert body == {"saves": [], "bigquery_enabled": False}
 
