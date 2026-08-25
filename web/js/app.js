@@ -20,6 +20,7 @@ import {
   seedVolume,
 } from "./projection.js";
 import { initAuth, onChange as onAuthChange, status as authStatus } from "./auth.js";
+import { ariaSort, nextDirection, sortRows } from "./sort.js";
 import {
   debounce,
   downloadJson,
@@ -46,6 +47,13 @@ const app = {
   view: "team",
   team: null,
   format: "ppr",
+  // Sort is view state, not projection state — deliberately not persisted, so
+  // reopening the page starts from the order that reads best rather than from
+  // whatever column was last poked at.
+  sort: {
+    allocation: { key: "last", direction: "desc" },
+    board: { key: "pts", direction: "desc" },
+  },
 };
 
 // -- helpers ---------------------------------------------------------------
@@ -212,76 +220,110 @@ function renderVolumeMeta() {
   }
 }
 
-function renderAllocation() {
+/**
+ * One row's worth of values, before any of it becomes HTML.
+ *
+ * Sorting needs numbers to compare, not the strings they are rendered as, so
+ * the table is built in two passes: values here, markup after the sort.
+ */
+function allocationRows() {
   const team = app.baseline.teams[app.team];
   const working = teamState(app.team);
   const projection = currentProjection();
   const projected = new Map(projection.players.map((p) => [p.player_id, p]));
 
-  const rows = team.roster
+  return team.roster
     .filter((entry) => PROJECTED_POSITIONS.has(entry.position))
     .map((entry) => {
       const allocation = working.allocations[entry.player_id] || { shares: {} };
       const result = projected.get(entry.player_id);
       const stats = result?.stats;
       const sources = rateSources(entry, app.baseline.league_rates, allocation.rates);
-      // Anyone whose efficiency is a positional median rather than his own.
-      const estimated = Object.values(sources).some((source) => source === "league");
-
-      const tags = [];
-      if (entry.is_rookie) tags.push('<span class="tag tag-rookie">rookie</span>');
-      else if (!entry.played_here_2025) {
-        tags.push(`<span class="tag tag-new">${entry.team_2025 || "new"}</span>`);
-      }
-
-      const baseline = entry.baseline;
-      const lastYear = baseline
-        ? `${round(baseline.fantasy_points_ppr, 0)} pts`
-        : "—";
-
-      const shareInputs = SHARE_FIELDS.map((field) => {
-        const share = allocation.shares?.[field.key] || 0;
-        const teamVolume = working.volume[field.volume] || 0;
-        // A category the team never uses does not need an input for it.
-        if (!teamVolume) return '<td class="num">—</td>';
-        return `<td class="num">
-          <input class="share-input" type="number" step="0.5" min="0" max="100"
-                 data-player="${entry.player_id}" data-share="${field.key}"
-                 value="${(share * 100).toFixed(1)}" />
-        </td>`;
-      }).join("");
-
-      const yards = stats
-        ? stats.passing_yards + stats.rushing_yards + stats.receiving_yards
-        : 0;
-      const tds = stats
-        ? stats.passing_tds + stats.rushing_tds + stats.receiving_tds
-        : 0;
-
-      return `
-        <tr class="${estimated ? "is-estimated" : ""}">
-          <td class="sticky-col">
-            <span class="player-name">${entry.player}</span>${tags.join("")}
-          </td>
-          <td>${entry.position}</td>
-          <td>${lastYear}</td>
-          <td class="num">${result?.games ?? 17}</td>
-          ${shareInputs}
-          <td class="num">${stats ? round(stats.pass_attempts) : "—"}</td>
-          <td class="num">${stats ? round(stats.carries) : "—"}</td>
-          <td class="num">${stats ? round(stats.targets) : "—"}</td>
-          <td class="num">${stats ? round(yards) : "—"}</td>
-          <td class="num">${stats ? round(tds, 1) : "—"}</td>
-          <td class="num">${result ? round(result.points[app.format], 1) : "—"}</td>
-          <td class="num">${result ? round(result.per_game[app.format], 1) : "—"}</td>
-        </tr>`;
+      return {
+        entry,
+        allocation,
+        result,
+        stats,
+        // Anyone whose efficiency is a positional median rather than his own.
+        estimated: Object.values(sources).some((source) => source === "league"),
+        player: entry.player,
+        position: entry.position,
+        last: entry.baseline?.fantasy_points_ppr ?? null,
+        games: result?.games ?? 17,
+        share_pass: allocation.shares?.pass ?? 0,
+        share_rush: allocation.shares?.rush ?? 0,
+        share_recv: allocation.shares?.recv ?? 0,
+        att: stats?.pass_attempts ?? null,
+        car: stats?.carries ?? null,
+        tgt: stats?.targets ?? null,
+        yds: stats
+          ? stats.passing_yards + stats.rushing_yards + stats.receiving_yards
+          : null,
+        td: stats ? stats.passing_tds + stats.rushing_tds + stats.receiving_tds : null,
+        pts: result?.points[app.format] ?? null,
+        ppg: result?.per_game[app.format] ?? null,
+      };
     });
+}
+
+function allocationRowMarkup(row) {
+  const working = teamState(app.team);
+  const { entry, allocation, result, stats } = row;
+
+  const tags = [];
+  if (entry.is_rookie) tags.push('<span class="tag tag-rookie">rookie</span>');
+  else if (!entry.played_here_2025) {
+    tags.push(`<span class="tag tag-new">${entry.team_2025 || "new"}</span>`);
+  }
+
+  const lastYear = entry.baseline ? `${round(entry.baseline.fantasy_points_ppr, 0)} pts` : "—";
+
+  const shareInputs = SHARE_FIELDS.map((field) => {
+    const share = allocation.shares?.[field.key] || 0;
+    // A category the team never uses does not need an input for it.
+    if (!working.volume[field.volume]) return '<td class="num">—</td>';
+    return `<td class="num">
+      <input class="share-input" type="number" step="0.5" min="0" max="100"
+             data-player="${entry.player_id}" data-share="${field.key}"
+             value="${(share * 100).toFixed(1)}" />
+    </td>`;
+  }).join("");
+
+  return `
+    <tr class="${row.estimated ? "is-estimated" : ""}">
+      <td class="sticky-col">
+        <span class="player-name">${entry.player}</span>${tags.join("")}
+      </td>
+      <td>${entry.position}</td>
+      <td>${lastYear}</td>
+      <td class="num">${result?.games ?? 17}</td>
+      ${shareInputs}
+      <td class="num">${stats ? round(stats.pass_attempts) : "—"}</td>
+      <td class="num">${stats ? round(stats.carries) : "—"}</td>
+      <td class="num">${stats ? round(stats.targets) : "—"}</td>
+      <td class="num">${stats ? round(row.yds) : "—"}</td>
+      <td class="num">${stats ? round(row.td, 1) : "—"}</td>
+      <td class="num">${result ? round(row.pts, 1) : "—"}</td>
+      <td class="num">${result ? round(row.ppg, 1) : "—"}</td>
+    </tr>`;
+}
+
+function renderAllocation() {
+  const working = teamState(app.team);
+  const projection = currentProjection();
+  const sorted = sortRows(
+    allocationRows(),
+    app.sort.allocation.key,
+    app.sort.allocation.direction,
+  );
 
   $("allocation-body").innerHTML =
-    rows.join("") || '<tr><td colspan="14" class="empty">No skill players on this roster.</td></tr>';
+    sorted.map(allocationRowMarkup).join("") ||
+    '<tr><td colspan="14" class="empty">No skill players on this roster.</td></tr>';
 
   renderAllocationFoot(projection, working);
   bindShareInputs();
+  markSortedHeader("allocation-head", app.sort.allocation);
 
   const unassigned = SHARE_FIELDS.filter(
     (field) => Math.abs(projection.unallocated[field.key]) > 0.005,
@@ -289,6 +331,46 @@ function renderAllocation() {
   $("allocation-hint").textContent = unassigned.length
     ? "Shares are percentages of the team volume above. Anything left unassigned is volume nobody has been given — the row at the bottom tracks it."
     : "Every category is fully allocated.";
+}
+
+/** Reflect the current sort on the headers, for sighted and screen readers alike. */
+function markSortedHeader(headId, current) {
+  const head = $(headId);
+  if (!head) return;
+  for (const th of head.querySelectorAll("th[data-sort]")) {
+    th.setAttribute("aria-sort", ariaSort(current, th.dataset.sort));
+  }
+}
+
+/**
+ * Make a header row sortable.
+ *
+ * Bound once at boot rather than on every render — the headers are static, and
+ * rebinding them each repaint would stack listeners until one click sorted the
+ * table a dozen times.
+ */
+function bindSortableHeader(headId, target, rerender) {
+  const head = $(headId);
+  if (!head) return;
+  for (const th of head.querySelectorAll("th[data-sort]")) {
+    th.tabIndex = 0;
+    th.setAttribute("role", "columnheader");
+    const activate = () => {
+      const key = th.dataset.sort;
+      app.sort[target] = {
+        key,
+        direction: nextDirection(app.sort[target], key, th.dataset.type || "number"),
+      };
+      rerender();
+    };
+    th.addEventListener("click", activate);
+    th.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        activate();
+      }
+    });
+  }
 }
 
 function renderAllocationFoot(projection, working) {
@@ -389,40 +471,62 @@ function renderBoard() {
 
   const projections = codes.map((code) => currentProjection(code));
   const ranks = positionalRanks(projections, format);
-  const players = projections
-    .flatMap((projection) =>
-      projection.players.map((player) => ({ ...player, team: projection.team })),
-    )
-    .filter((player) => position === "ALL" || player.position === position)
-    .sort((a, b) => b.points[format] - a.points[format]);
+
+  const rows = projections.flatMap((projection) =>
+    projection.players.map((player) => {
+      const { stats } = player;
+      return {
+        player: player.player,
+        position: player.position,
+        team: projection.team,
+        // Sorting on the number groups QB1, QB2, QB3 rather than interleaving
+        // every position's firsts; the label carries the position for reading.
+        rank: ranks.get(player.player_id),
+        rankLabel: `${player.position}${ranks.get(player.player_id)}`,
+        games: player.games,
+        att: stats.pass_attempts,
+        car: stats.carries,
+        rec: stats.receptions,
+        yds: stats.passing_yards + stats.rushing_yards + stats.receiving_yards,
+        td: stats.passing_tds + stats.rushing_tds + stats.receiving_tds,
+        pts: player.points[format],
+        ppg: player.per_game[format],
+      };
+    }),
+  );
+
+  const visible = sortRows(
+    rows.filter((row) => position === "ALL" || row.position === position),
+    app.sort.board.key,
+    app.sort.board.direction,
+  );
 
   $("board-hint").textContent =
-    `${players.length} players across ${codes.length} projected team${codes.length === 1 ? "" : "s"}`;
+    `${visible.length} players across ${codes.length} projected team${codes.length === 1 ? "" : "s"}`;
 
   $("board-body").innerHTML =
-    players
-      .map((player) => {
-        const { stats } = player;
-        const yards = stats.passing_yards + stats.rushing_yards + stats.receiving_yards;
-        const tds = stats.passing_tds + stats.rushing_tds + stats.receiving_tds;
-        return `
+    visible
+      .map(
+        (row) => `
           <tr>
-            <td class="num">${player.position}${ranks.get(player.player_id)}</td>
-            <td class="sticky-col"><span class="player-name">${player.player}</span></td>
-            <td>${player.position}</td>
-            <td>${player.team}</td>
-            <td class="num">${player.games}</td>
-            <td class="num">${round(stats.pass_attempts)}</td>
-            <td class="num">${round(stats.carries)}</td>
-            <td class="num">${round(stats.receptions)}</td>
-            <td class="num">${round(yards)}</td>
-            <td class="num">${round(tds, 1)}</td>
-            <td class="num">${round(player.points[format], 1)}</td>
-            <td class="num">${round(player.per_game[format], 1)}</td>
-          </tr>`;
-      })
+            <td class="num">${row.rankLabel}</td>
+            <td class="sticky-col"><span class="player-name">${row.player}</span></td>
+            <td>${row.position}</td>
+            <td>${row.team}</td>
+            <td class="num">${row.games}</td>
+            <td class="num">${round(row.att)}</td>
+            <td class="num">${round(row.car)}</td>
+            <td class="num">${round(row.rec)}</td>
+            <td class="num">${round(row.yds)}</td>
+            <td class="num">${round(row.td, 1)}</td>
+            <td class="num">${round(row.pts, 1)}</td>
+            <td class="num">${round(row.ppg, 1)}</td>
+          </tr>`,
+      )
       .join("") ||
     '<tr><td colspan="12" class="empty">No players at that position yet.</td></tr>';
+
+  markSortedHeader("board-head", app.sort.board);
 }
 
 // -- saving ----------------------------------------------------------------
@@ -564,6 +668,8 @@ async function boot() {
   for (const tab of $("tabs").querySelectorAll(".tab")) {
     tab.addEventListener("click", () => switchView(tab.dataset.view));
   }
+  bindSortableHeader("allocation-head", "allocation", renderAllocation);
+  bindSortableHeader("board-head", "board", renderBoard);
 
   renderTeamView();
   setSaveState(stored ? "Restored from this browser" : "Saved locally");

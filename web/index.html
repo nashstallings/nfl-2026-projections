@@ -64,21 +64,21 @@
           <div class="table-scroll">
             <table class="grid" id="allocation-table">
               <thead>
-                <tr>
-                  <th class="sticky-col">Player</th>
-                  <th>Pos</th>
-                  <th>2025</th>
-                  <th class="num">G</th>
-                  <th class="num">Att %</th>
-                  <th class="num">Car %</th>
-                  <th class="num">Tgt %</th>
-                  <th class="num">Att</th>
-                  <th class="num">Car</th>
-                  <th class="num">Tgt</th>
-                  <th class="num">Yds</th>
-                  <th class="num">TD</th>
-                  <th class="num">Pts</th>
-                  <th class="num">PPG</th>
+                <tr id="allocation-head">
+                  <th class="sticky-col sortable" data-sort="player" data-type="text">Player</th>
+                  <th class="sortable" data-sort="position" data-type="text">Pos</th>
+                  <th class="sortable" data-sort="last">2025</th>
+                  <th class="num sortable" data-sort="games">G</th>
+                  <th class="num sortable" data-sort="share_pass">Att %</th>
+                  <th class="num sortable" data-sort="share_rush">Car %</th>
+                  <th class="num sortable" data-sort="share_recv">Tgt %</th>
+                  <th class="num sortable" data-sort="att">Att</th>
+                  <th class="num sortable" data-sort="car">Car</th>
+                  <th class="num sortable" data-sort="tgt">Tgt</th>
+                  <th class="num sortable" data-sort="yds">Yds</th>
+                  <th class="num sortable" data-sort="td">TD</th>
+                  <th class="num sortable" data-sort="pts">Pts</th>
+                  <th class="num sortable" data-sort="ppg">PPG</th>
                 </tr>
               </thead>
               <tbody id="allocation-body"></tbody>
@@ -115,19 +115,19 @@
           <div class="table-scroll">
             <table class="grid" id="board-table">
               <thead>
-                <tr>
-                  <th class="num">#</th>
-                  <th class="sticky-col">Player</th>
-                  <th>Pos</th>
-                  <th>Team</th>
-                  <th class="num">G</th>
-                  <th class="num">Att</th>
-                  <th class="num">Car</th>
-                  <th class="num">Rec</th>
-                  <th class="num">Yds</th>
-                  <th class="num">TD</th>
-                  <th class="num">Pts</th>
-                  <th class="num">PPG</th>
+                <tr id="board-head">
+                  <th class="num sortable" data-sort="rank">#</th>
+                  <th class="sticky-col sortable" data-sort="player" data-type="text">Player</th>
+                  <th class="sortable" data-sort="position" data-type="text">Pos</th>
+                  <th class="sortable" data-sort="team" data-type="text">Team</th>
+                  <th class="num sortable" data-sort="games">G</th>
+                  <th class="num sortable" data-sort="att">Att</th>
+                  <th class="num sortable" data-sort="car">Car</th>
+                  <th class="num sortable" data-sort="rec">Rec</th>
+                  <th class="num sortable" data-sort="yds">Yds</th>
+                  <th class="num sortable" data-sort="td">TD</th>
+                  <th class="num sortable" data-sort="pts">Pts</th>
+                  <th class="num sortable" data-sort="ppg">PPG</th>
                 </tr>
               </thead>
               <tbody id="board-body"></tbody>
