@@ -177,3 +177,44 @@ class TestReads:
         response = client.get("/api/baseline")
         assert response.status_code == 200
         assert "teams" in response.json()
+
+
+class TestUnauthenticatedExposure:
+    """The last line before an open write endpoint reaches the internet.
+
+    With no client id and no API token every caller is treated as local. That is
+    right on loopback and indefensible on a public interface, so the process
+    refuses to start rather than serving writes to whoever finds the URL.
+    """
+
+    def test_loopback_without_auth_is_allowed(self):
+        """The local case: the socket is the wall."""
+        with configured(host="127.0.0.1", google_client_id="", api_token=""):
+            server.refuse_unauthenticated_exposure()
+
+    def test_public_interface_without_auth_is_refused(self):
+        with configured(host="0.0.0.0", google_client_id="", api_token=""):
+            with pytest.raises(server.UnsafeConfiguration, match="no authentication"):
+                server.refuse_unauthenticated_exposure()
+
+    def test_public_interface_with_google_sign_in_is_allowed(self):
+        with configured(
+            host="0.0.0.0",
+            google_client_id="app.apps.googleusercontent.com",
+            api_token="",
+        ):
+            server.refuse_unauthenticated_exposure()
+
+    def test_public_interface_with_an_api_token_is_allowed(self):
+        with configured(host="0.0.0.0", google_client_id="", api_token="s3cret"):
+            server.refuse_unauthenticated_exposure()
+
+    def test_a_named_host_without_auth_is_refused(self):
+        """Not just 0.0.0.0 — any interface someone else can reach."""
+        with configured(host="10.0.0.5", google_client_id="", api_token=""):
+            with pytest.raises(server.UnsafeConfiguration):
+                server.refuse_unauthenticated_exposure()
+
+    def test_ipv6_loopback_is_still_local(self):
+        with configured(host="::1", google_client_id="", api_token=""):
+            server.refuse_unauthenticated_exposure()

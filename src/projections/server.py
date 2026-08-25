@@ -142,10 +142,37 @@ app.mount("/data", StaticFiles(directory=DATA_DIR), name="data")
 app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
 
 
+class UnsafeConfiguration(RuntimeError):
+    """The server would answer writes from anyone who found it."""
+
+
+# Addresses that mean "this machine only". Anything else is reachable by
+# someone other than the person who started the process.
+LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+
+
+def refuse_unauthenticated_exposure() -> None:
+    """Do not serve an open write endpoint on a public interface.
+
+    With no client id and no API token the app treats every caller as local,
+    which is correct on loopback and indefensible anywhere else — it would
+    accept a write to BigQuery from whoever found the URL. Deploy-time checks
+    cover the paths we know about; this covers the ones we do not.
+    """
+    if auth.auth_required() or settings.host in LOOPBACK:
+        return
+    raise UnsafeConfiguration(
+        f"refusing to listen on {settings.host} with no authentication "
+        "configured — set GOOGLE_CLIENT_ID (and ALLOWED_EMAILS) or API_TOKEN, "
+        "or bind to 127.0.0.1 for local use"
+    )
+
+
 def main() -> int:
     import uvicorn
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    refuse_unauthenticated_exposure()
     if not (DATA_DIR / "baseline.json").exists():
         logger.warning(
             "data/baseline.json is missing — run `python -m projections.build_baseline`"

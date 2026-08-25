@@ -1,0 +1,16 @@
+# Deployment constants, shared by both deploy paths.
+#
+# The client id used to live in two places — typed into deploy.sh by hand, and
+# stored as a GitHub Actions variable. Nothing kept them in agreement, so every
+# Actions deploy silently overwrote whatever the last manual deploy had set, and
+# sign-in broke again with no obvious connection to the commit that did it.
+#
+# It lives here now because it is not a secret: a Google client id names the app
+# to Google and grants nothing on its own. It is served to every visitor's
+# browser by design. Both paths read this file; an environment variable of the
+# same name still overrides it, for testing against a second client.
+#
+# ALLOWED_EMAILS is deliberately NOT here — who may write is per-person config,
+# and it stays a GitHub Actions variable / an argument to deploy.sh.
+
+GOOGLE_CLIENT_ID=845964113753-ie5eec2bohmi7bkroand5oljgsc0bq2m.apps.googleusercontent.com

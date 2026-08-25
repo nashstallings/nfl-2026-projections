@@ -17,6 +17,13 @@ DATASET="${BQ_DATASET:-projections}"
 TABLE="${BQ_TABLE:-player_projections}"
 RUNTIME_SA="${RUNTIME_SA:-nfl-projections-run}"
 
+# One source of truth for the client id, overridable from the environment.
+DEFAULTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/deploy.defaults"
+if [[ -f "${DEFAULTS}" ]]; then
+  # shellcheck source=/dev/null
+  source "${DEFAULTS}"
+fi
+
 GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
 ALLOWED_EMAILS="${ALLOWED_EMAILS:-}"
 

@@ -83,13 +83,28 @@ jobs:
           # Neither is a secret: the client id is served to the page, and the
           # allow list is an address you publish anyway. They are variables so
           # that changing who may write does not need a code change.
-          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          # Empty unless someone is deliberately testing another client; the
+          # committed default in infra/deploy.defaults is the normal source.
+          GOOGLE_CLIENT_ID_OVERRIDE: ${{ vars.GOOGLE_CLIENT_ID }}
           ALLOWED_EMAILS: ${{ vars.ALLOWED_EMAILS }}
           BQ_DATASET: ${{ vars.BQ_DATASET || 'projections' }}
           BQ_TABLE: ${{ vars.BQ_TABLE || 'player_projections' }}
         # ^|^ changes the delimiter gcloud splits the variable list on. The
         # default is a comma, which ALLOWED_EMAILS uses between addresses.
         run: |
+          source infra/deploy.defaults
+          GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID_OVERRIDE:-${GOOGLE_CLIENT_ID}}"
+
+          # Deploying with either of these empty produces a service that asks
+          # nobody for anything: with no client id and no API token the app
+          # treats every caller as local and accepts writes from whoever finds
+          # the URL. deploy.sh has always refused that; this path had not.
+          if [[ -z "${GOOGLE_CLIENT_ID}" || -z "${ALLOWED_EMAILS}" ]]; then
+            echo "::error::GOOGLE_CLIENT_ID and ALLOWED_EMAILS must both be set. Deploying without them would open writes to your BigQuery table."
+            exit 1
+          fi
+          echo "deploying with client ${GOOGLE_CLIENT_ID}"
+
           gcloud run deploy "${SERVICE}" \
             --project="${PROJECT}" \
             --region="${REGION}" \
