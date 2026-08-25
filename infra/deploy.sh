@@ -17,7 +17,9 @@ DATASET="${BQ_DATASET:-projections}"
 TABLE="${BQ_TABLE:-player_projections}"
 RUNTIME_SA="${RUNTIME_SA:-nfl-projections-run}"
 
-# One source of truth for the client id, overridable from the environment.
+# One source of truth for the client id. Sourced after any environment value,
+# so the committed file wins — a stale value in a shell someone left open is
+# the same failure as a stale repository variable.
 DEFAULTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/deploy.defaults"
 if [[ -f "${DEFAULTS}" ]]; then
   # shellcheck source=/dev/null
