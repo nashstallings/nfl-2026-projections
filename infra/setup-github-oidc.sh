@@ -46,8 +46,18 @@ if ! gcloud iam service-accounts describe "${SA_EMAIL}" --project="${PROJECT}" >
     --project="${PROJECT}" --display-name="NFL projections deployer (GitHub Actions)"
 fi
 
+# serviceAccountUser grants actAs but not get, so without serviceAccountViewer
+# the workflow's preflight cannot tell a missing runtime account from one it is
+# not allowed to look at. Read-only, and it is checking a precondition the
+# deploy genuinely depends on.
+#
+# storage.admin is broader than this needs — object access to the Cloud Build
+# staging bucket would do — but the bucket is created on demand and its name
+# varies by gcloud version, so narrowing it is a change worth testing against a
+# working deploy rather than guessing at.
 for ROLE in roles/run.admin roles/cloudbuild.builds.editor roles/storage.admin \
-            roles/artifactregistry.admin roles/iam.serviceAccountUser; do
+            roles/artifactregistry.admin roles/iam.serviceAccountUser \
+            roles/iam.serviceAccountViewer; do
   gcloud projects add-iam-policy-binding "${PROJECT}" \
     --member="serviceAccount:${SA_EMAIL}" --role="${ROLE}" \
     --condition=None --quiet >/dev/null

@@ -45,23 +45,34 @@ jobs:
       # `gcloud run deploy` against a service account that does not exist fails
       # on actAs, which reads like the deployer is missing a permission rather
       # than like bootstrap.sh was never run. Check first and say so.
+      #
+      # The check has to tell "not found" from "not allowed to look", or it
+      # reports a missing account every time the deployer simply cannot read
+      # IAM — which is a lie that sends you off to re-run bootstrap for nothing.
+      # Anything other than a definite NOT_FOUND warns and continues; the deploy
+      # itself is the authority.
+      #
+      # The dataset is deliberately not checked here. Only the runtime account
+      # needs to read BigQuery, and granting the deployer that access purely to
+      # run a diagnostic would widen it for no benefit. bootstrap.sh verifies
+      # the dataset as the human who owns it.
       - name: Check prerequisites
         env:
           PROJECT: ${{ vars.GCP_PROJECT || 'ff-python-api' }}
           RUNTIME_SA: ${{ vars.CLOUD_RUN_RUNTIME_SA || 'nfl-projections-run' }}
-          BQ_DATASET: ${{ vars.BQ_DATASET || 'projections' }}
         run: |
           SA="${RUNTIME_SA}@${PROJECT}.iam.gserviceaccount.com"
-          FAILED=0
-          if ! gcloud iam service-accounts describe "${SA}" --project="${PROJECT}" >/dev/null 2>&1; then
+          if OUT="$(gcloud iam service-accounts describe "${SA}" \
+                      --project="${PROJECT}" 2>&1)"; then
+            echo "${SA} exists"
+            exit 0
+          fi
+          if grep -qiE 'not_?found|does not exist' <<<"${OUT}"; then
             echo "::error::${SA} does not exist. Run ./infra/bootstrap.sh in Cloud Shell, then re-run this workflow."
-            FAILED=1
+            exit 1
           fi
-          if ! bq --project_id="${PROJECT}" show --dataset "${PROJECT}:${BQ_DATASET}" >/dev/null 2>&1; then
-            echo "::error::dataset ${PROJECT}:${BQ_DATASET} does not exist. Run ./infra/bootstrap.sh in Cloud Shell, then re-run this workflow."
-            FAILED=1
-          fi
-          exit "${FAILED}"
+          echo "::warning::could not verify ${SA} — the deployer may lack iam.serviceAccounts.get. Continuing; a genuinely missing account fails the deploy with actAs."
+          echo "${OUT}"
 
       - name: Deploy to Cloud Run
         env:
