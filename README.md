@@ -80,19 +80,26 @@ No credentials needed for that — it reads nflverse's public releases.
 
 **Team tab.** Pick a team. The three boxes at the top are its 2026 volume —
 pass attempts, carries, targets — starting at last season's totals, with the
-amount **vacated** noted underneath. Change them first: if you think an offense
-throws 60 more times this year, say so there, and every player's projection
-moves with it.
+amount **vacated** noted underneath and the league's min, median and max on a
+scale below, so you can see whether a number is high before you commit to it.
 
-Below that is the roster. Each player gets three share boxes — his cut of
-attempts, carries, and targets. Returning players start at the share they
-actually earned on this team last season. Newcomers and rookies start at zero,
-because nothing about their usage is known yet, and that is a decision rather
-than a default.
+Below that is the roster, and it is a spreadsheet: you type the numbers. Pass
+attempts, passing yards, touchdowns, interceptions, carries, rushing yards,
+targets, receptions, receiving yards, fumbles — the raw counts, seeded with what
+each returning player actually did on this team in 2025. Newcomers and rookies
+start empty, because nothing about their usage is known yet and that is a
+decision rather than a default.
 
-The footer tracks how much of each category you have handed out. Under 100%
-means volume nobody owns; over 100% means you gave the same carry to two backs.
-Neither gets corrected for you — the correction is the projection.
+**Y/A, Y/C, Y/T and Catch %** are calculated from what you typed and shown in
+grey. They are there to tell you whether the line you just wrote is plausible —
+1,400 yards on 150 targets is 9.33 a target, which is a good season; on 100
+targets it is 14.0, which is nobody's season.
+
+The **Allocated** row sits directly under the headers, where the budget stays in
+view while you spend it. Attempts, carries and targets are compared against the
+team volume above: amber when there is volume nobody has been given, red when
+you have handed out more than the offence is going to run. Neither gets
+corrected for you — the correction is the projection.
 
 **Board tab.** Every team you have projected, ranked against each other by
 position. QB1 through QB12 is a decision; 285 points on its own is not.
@@ -145,45 +152,23 @@ empty allow list permits nobody rather than everybody.
 
 ## The model
 
-Every projected stat is volume times a rate:
+A player's line is what you typed. Points come straight off it:
 
-| | Volume | Rate |
-| --- | --- | --- |
-| Passing | team pass attempts × share | yards/attempt, TD%, INT%, completion% |
-| Rushing | team carries × share | yards/carry, TD/carry |
-| Receiving | team targets × share | catch rate, yards/target, TD/target |
-| Fumbles | carries + receptions | fumbles lost per touch |
+| | |
+| --- | --- |
+| Passing | 0.04 a yard, 4 a touchdown, −2 an interception |
+| Rushing / receiving | 0.1 a yard, 6 a touchdown |
+| Fumbles lost | −2 |
+| Receptions | 0 / 0.5 / 1 depending on the format |
 
-Rates resolve in two steps: the rate the player earned last season on real
-volume, then the league median at his position. The volume floors for "real
-volume" are 100 pass attempts, 50 carries, 30 targets — below those a player's
-own rate is noise, and the median is the better estimate.
+Every rate on the page — yards per attempt, per carry, per target, catch rate,
+touchdown rates — is that line divided, never multiplied back. A rate with no
+volume under it shows a dash rather than a zero, because a back with no targets
+does not have a bad catch rate; he has none.
 
-Every rate is editable. The four that decide a projection — **Y/A, Y/C, Y/T and
-Catch %** — sit in the table itself, pre-filled with what the projection is
-using; type over one to override it, clear the box to hand it back to the model.
-An overridden rate turns the accent colour. Positions that do not use a rate get
-a dash rather than an input offering a decision that changes nothing.
-
-**`+`** beside a name opens the rest — touchdown rates, interception rate,
-completion rate, fumbles per touch — which matter but are rarely the argument.
-
-### The player card
-
-Click a name for his **last four seasons**: the volume, the rates, and the
-fantasy points, newest first. This is the context the table cannot give you.
-Justin Jefferson at 7.43 yards per target in 2025 looks like one thing until you
-see 9.83, 10.74 and 9.95 behind it, and then the question is whether 2025 was
-the change or the noise. That question is the whole job, and the card is where
-it gets answered.
-
-Columns follow the position — a quarterback's card leads with attempts, yards
-per attempt and touchdown rate; a receiver's with targets, catch rate and yards
-per target. Rookies get a card saying they have no seasons, which is itself the
-answer: the projection is on league medians until you overrule it.
-
-The history is a separate file, fetched the first time a card is opened, because
-most sessions never open one.
+Returning players seed from their own 2025 line on this team, so the gap between
+what the roster adds up to and the team volume above is exactly the vacated
+volume, sitting there waiting to be handed out.
 
 Kickers are excluded, from the data as well as the model. They score from field
 goals rather than a share of anyone's attempts, so there is nothing for this to

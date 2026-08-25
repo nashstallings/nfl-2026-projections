@@ -148,10 +148,10 @@ export function downloadJson(payload, filename) {
 /**
  * Rebuild working state from the rows of a saved projection.
  *
- * The table stores what you decided — the team volume and each player's shares —
- * beside what it produced, so a save is enough to put you back where you were
- * without consulting the baseline. That is the point of storing the inputs:
- * a projection you cannot reopen is a backup, not an archive.
+ * The table stores the stat line beside the team volume it came out of, and the
+ * stat line is now what you typed — so a save is enough to put you back where
+ * you were without consulting the baseline. A projection you cannot reopen is a
+ * backup, not an archive.
  *
  * Rows are external data. A malformed one is skipped rather than allowed to
  * abort the load and lose the rest of the save with it.
@@ -174,12 +174,20 @@ export function stateFromRows(rows) {
       };
     }
     teams[code].allocations[playerId] = {
-      shares: {
-        pass: Number(row.share_pass) || 0,
-        rush: Number(row.share_rush) || 0,
-        recv: Number(row.share_recv) || 0,
+      counts: {
+        pass_attempts: Number(row.pass_attempts) || 0,
+        passing_yards: Number(row.passing_yards) || 0,
+        passing_tds: Number(row.passing_tds) || 0,
+        interceptions: Number(row.interceptions) || 0,
+        carries: Number(row.carries) || 0,
+        rushing_yards: Number(row.rushing_yards) || 0,
+        rushing_tds: Number(row.rushing_tds) || 0,
+        targets: Number(row.targets) || 0,
+        receptions: Number(row.receptions) || 0,
+        receiving_yards: Number(row.receiving_yards) || 0,
+        receiving_tds: Number(row.receiving_tds) || 0,
+        fumbles_lost: Number(row.fumbles_lost) || 0,
       },
-      rates: {},
       ...(Number(row.games) ? { games: Number(row.games) } : {}),
     };
   }

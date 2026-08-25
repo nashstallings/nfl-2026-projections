@@ -51,18 +51,19 @@ describe("isStaleToken", () => {
 describe("stateFromRows", () => {
   const row = {
     team: "MIN", player_id: "1", games: 17,
-    share_pass: 0.9, share_rush: 0.1, share_recv: 0,
     team_pass_attempts: 550, team_carries: 420, team_targets: 500,
+    carries: 260, rushing_yards: 1150, rushing_tds: 9,
+    targets: 60, receptions: 48, receiving_yards: 400, receiving_tds: 2,
   };
 
-  test("a save restores the team volume and each player's shares", () => {
+  test("a save restores the team volume and the line you typed", () => {
     const state = stateFromRows([row]);
     assert.deepEqual(state.teams.MIN.volume, {
       pass_attempts: 550, carries: 420, targets: 500,
     });
-    assert.deepEqual(state.teams.MIN.allocations["1"].shares, {
-      pass: 0.9, rush: 0.1, recv: 0,
-    });
+    const counts = state.teams.MIN.allocations["1"].counts;
+    assert.equal(counts.carries, 260);
+    assert.equal(counts.receiving_yards, 400);
   });
 
   test("games are restored when they were not the default", () => {
@@ -85,9 +86,9 @@ describe("stateFromRows", () => {
     assert.deepEqual(stateFromRows(null), { teams: {} });
   });
 
-  test("missing numbers become zero rather than NaN", () => {
+  test("missing counts become zero rather than NaN", () => {
     const state = stateFromRows([{ team: "MIN", player_id: "1" }]);
     assert.equal(state.teams.MIN.volume.carries, 0);
-    assert.equal(state.teams.MIN.allocations["1"].shares.rush, 0);
+    assert.equal(state.teams.MIN.allocations["1"].counts.carries, 0);
   });
 });

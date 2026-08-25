@@ -68,25 +68,29 @@
                 <tr id="allocation-head">
                   <th class="sticky-col sortable" data-sort="player" data-type="text">Player</th>
                   <th class="sortable" data-sort="position" data-type="text">Pos</th>
-                  <th class="sortable" data-sort="last">2025</th>
-                  <th class="num sortable" data-sort="share_pass">Att %</th>
-                  <th class="num sortable" data-sort="share_rush">Car %</th>
-                  <th class="num sortable" data-sort="share_recv">Tgt %</th>
-                  <th class="num sortable" data-sort="att">Att</th>
-                  <th class="num sortable" data-sort="car">Car</th>
-                  <th class="num sortable" data-sort="tgt">Tgt</th>
-                  <th class="num sortable" data-sort="yards_per_attempt" title="Passing yards per attempt">Y/A</th>
-                  <th class="num sortable" data-sort="yards_per_carry" title="Rushing yards per carry">Y/C</th>
-                  <th class="num sortable" data-sort="yards_per_target" title="Receiving yards per target">Y/T</th>
-                  <th class="num sortable" data-sort="catch_rate" title="Receptions per target">Catch %</th>
-                  <th class="num sortable" data-sort="yds">Yds</th>
-                  <th class="num sortable" data-sort="td">TD</th>
+                  <th class="num sortable" data-sort="last">2025</th>
+                  <th class="num sortable" data-sort="pass_attempts">Att</th>
+                  <th class="num sortable" data-sort="passing_yards">Pa yds</th>
+                  <th class="num sortable" data-sort="passing_tds">Pa TD</th>
+                  <th class="num sortable" data-sort="interceptions">INT</th>
+                  <th class="num sortable" data-sort="carries">Car</th>
+                  <th class="num sortable" data-sort="rushing_yards">Ru yds</th>
+                  <th class="num sortable" data-sort="rushing_tds">Ru TD</th>
+                  <th class="num sortable" data-sort="targets">Tgt</th>
+                  <th class="num sortable" data-sort="receptions">Rec</th>
+                  <th class="num sortable" data-sort="receiving_yards">Re yds</th>
+                  <th class="num sortable" data-sort="receiving_tds">Re TD</th>
+                  <th class="num sortable" data-sort="fumbles_lost">Fum</th>
+                  <th class="num derived sortable" data-sort="yards_per_attempt" title="Passing yards per attempt — calculated">Y/A</th>
+                  <th class="num derived sortable" data-sort="yards_per_carry" title="Rushing yards per carry — calculated">Y/C</th>
+                  <th class="num derived sortable" data-sort="yards_per_target" title="Receiving yards per target — calculated">Y/T</th>
+                  <th class="num derived sortable" data-sort="catch_rate" title="Receptions per target — calculated">Catch %</th>
                   <th class="num sortable" data-sort="pts">Pts</th>
                   <th class="num sortable" data-sort="ppg">PPG</th>
                 </tr>
+                <tr id="allocation-totals" class="totals-row"></tr>
               </thead>
               <tbody id="allocation-body"></tbody>
-              <tfoot id="allocation-foot"></tfoot>
             </table>
           </div>
         </section>

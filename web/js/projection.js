@@ -25,128 +25,77 @@ export const SCORING = {
   fumbleLost: -2,
 };
 
-/** Which team-level volume each share divides up. */
-export const VOLUME_BY_SHARE = {
-  pass: "pass_attempts",
-  rush: "carries",
-  recv: "targets",
-};
-
 /** Kickers score from field goals, not from volume, so the model skips them. */
 export const PROJECTED_POSITIONS = new Set(["QB", "RB", "WR", "TE", "FB"]);
 
-const RATE_NAMES = [
-  "completion_rate",
-  "yards_per_attempt",
-  "pass_td_rate",
-  "interception_rate",
-  "yards_per_carry",
-  "rush_td_rate",
-  "catch_rate",
-  "yards_per_target",
-  "rec_td_rate",
-  "fumble_rate",
+/**
+ * The numbers you type. Everything else on the row is arithmetic on these.
+ *
+ * Yards are here because a rate cannot be a read-out without them: yards per
+ * target is receiving yards over targets, and if the yards were themselves
+ * derived from a rate the arrow would point the other way and the rate would be
+ * the input again.
+ */
+export const COUNT_FIELDS = [
+  "pass_attempts", "passing_yards", "passing_tds", "interceptions",
+  "carries", "rushing_yards", "rushing_tds",
+  "targets", "receptions", "receiving_yards", "receiving_tds",
+  "fumbles_lost",
 ];
 
-/**
- * Resolve the rates a player should be projected on.
- *
- * Three sources, in order: an override you typed, the rate the player earned
- * last season on real volume, and the league median at his position. A rookie
- * lands entirely on the third, which is the honest answer — nothing about him
- * is known yet, so he gets treated as an average player at his position until
- * you say otherwise.
- */
-export function effectiveRates(player, leagueRates = {}, overrides = {}) {
-  const own = player?.rates || {};
-  const league = leagueRates[player?.position] || {};
-  const resolved = {};
-  for (const name of RATE_NAMES) {
-    if (Number.isFinite(overrides[name])) {
-      resolved[name] = overrides[name];
-    } else if (Number.isFinite(own[name])) {
-      resolved[name] = own[name];
-    } else {
-      resolved[name] = league[name] ?? 0;
-    }
-  }
-  return resolved;
-}
+/** Which team volume each count is allocated out of, for the totals row. */
+export const VOLUME_OF = {
+  pass_attempts: "pass_attempts",
+  carries: "carries",
+  targets: "targets",
+};
 
-/** Where a rate came from, so the interface can show which numbers are guesses. */
-export function rateSources(player, leagueRates = {}, overrides = {}) {
-  const own = player?.rates || {};
-  const sources = {};
-  for (const name of RATE_NAMES) {
-    if (Number.isFinite(overrides[name])) sources[name] = "override";
-    else if (Number.isFinite(own[name])) sources[name] = "player";
-    else sources[name] = "league";
-  }
-  return sources;
+const number = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
+
+/** A complete stat line from whatever subset of counts is present. */
+export function statsFromCounts(counts = {}) {
+  const stats = {};
+  for (const field of COUNT_FIELDS) stats[field] = Math.max(0, number(counts[field]));
+  return stats;
 }
 
 /**
- * A player's share of each volume last season, on this team.
+ * A player's 2025 line on this team, as the starting point for editing.
  *
- * Uses the on-this-team split rather than his season line: a receiver who
- * arrived at the deadline earned his targets here over six games, and counting
- * the ones he earned somewhere else would inflate his claim on this offense.
- * A player who was not here gets zero — he has no history to default to, which
- * is exactly the point at which you have to make a call.
+ * Last season's actual numbers rather than a share of anything — the gap
+ * between what the returning players did and the 2026 team volume is the
+ * vacated volume, sitting there waiting to be handed out.
+ *
+ * A player who was not here starts empty. That is not missing data; it is the
+ * decision the tool exists to make.
  */
-export function defaultShares(player, teamTotals = {}) {
+export function seedCounts(player) {
   const here = player?.here_2025;
-  if (!here) return { pass: 0, rush: 0, recv: 0 };
-  const share = (stat) => {
-    const total = teamTotals[stat] || 0;
-    return total > 0 ? (here[stat] || 0) / total : 0;
-  };
-  return {
-    pass: share("pass_attempts"),
-    rush: share("carries"),
-    recv: share("targets"),
-  };
+  if (!here) return statsFromCounts({});
+  return statsFromCounts(here);
 }
 
 /**
- * A missing rate means no production, not an unknown quantity.
+ * The rates behind a line. Read-outs, not inputs.
  *
- * Rates normally arrive complete from `effectiveRates`, but a partial object —
- * a positional rate table that has no passing entries, say — would otherwise
- * multiply into NaN and carry it through every total downstream. A blank cell
- * in a projection table is a bug you notice; a NaN that quietly zeroes a team's
- * points is one you do not.
+ * A rate with no volume under it is absent rather than zero — a back with no
+ * targets has no catch rate, and printing 0% would read as a bad one.
  */
-function rate(rates, name) {
-  const value = rates?.[name];
-  return Number.isFinite(value) ? value : 0;
-}
-
-/** Turn assigned volume into a stat line at the given rates. */
-export function projectStats({ volume, shares, rates }) {
-  const attempts = (volume.pass_attempts || 0) * (shares.pass || 0);
-  const carries = (volume.carries || 0) * (shares.rush || 0);
-  const targets = (volume.targets || 0) * (shares.recv || 0);
-
-  const receptions = targets * rate(rates, "catch_rate");
-  // Fumbles follow touches, so they are computed after receptions rather than
-  // from targets — a drop is not a fumble.
-  const touches = carries + receptions;
-
+export function derivedRates(stats) {
+  const per = (numerator, denominator) =>
+    denominator > 0 ? numerator / denominator : null;
+  const touches = stats.carries + stats.receptions;
   return {
-    pass_attempts: attempts,
-    completions: attempts * rate(rates, "completion_rate"),
-    passing_yards: attempts * rate(rates, "yards_per_attempt"),
-    passing_tds: attempts * rate(rates, "pass_td_rate"),
-    interceptions: attempts * rate(rates, "interception_rate"),
-    carries,
-    rushing_yards: carries * rate(rates, "yards_per_carry"),
-    rushing_tds: carries * rate(rates, "rush_td_rate"),
-    targets,
-    receptions,
-    receiving_yards: targets * rate(rates, "yards_per_target"),
-    receiving_tds: targets * rate(rates, "rec_td_rate"),
-    fumbles_lost: touches * rate(rates, "fumble_rate"),
+    yards_per_attempt: per(stats.passing_yards, stats.pass_attempts),
+    pass_td_rate: per(stats.passing_tds, stats.pass_attempts),
+    interception_rate: per(stats.interceptions, stats.pass_attempts),
+    yards_per_carry: per(stats.rushing_yards, stats.carries),
+    rush_td_rate: per(stats.rushing_tds, stats.carries),
+    catch_rate: per(stats.receptions, stats.targets),
+    yards_per_target: per(stats.receiving_yards, stats.targets),
+    yards_per_reception: per(stats.receiving_yards, stats.receptions),
+    rec_td_rate: per(stats.receiving_tds, stats.targets),
+    fumble_rate: per(stats.fumbles_lost, touches),
   };
 }
 
@@ -168,16 +117,9 @@ export function fantasyPoints(stats) {
   };
 }
 
-/**
- * Project one player: stats, points, and per-game rates.
- *
- * `games` is what turns a season total into the number you actually draft on.
- * A back projected for 240 points over 17 games and one projected for 240 over
- * 12 are not the same player, and only the second one has a reason to be on
- * your bench in September.
- */
-export function projectPlayer({ player, volume, shares, rates, games = 17 }) {
-  const stats = projectStats({ volume, shares, rates });
+/** Project one player from the counts on his row. */
+export function projectPlayer({ player, counts, games = 17 }) {
+  const stats = statsFromCounts(counts);
   const points = fantasyPoints(stats);
   const perGame = games > 0 ? games : 1;
   return {
@@ -185,6 +127,7 @@ export function projectPlayer({ player, volume, shares, rates, games = 17 }) {
     player: player.player,
     position: player.position,
     stats,
+    rates: derivedRates(stats),
     points,
     per_game: {
       std: points.std / perGame,
@@ -196,35 +139,31 @@ export function projectPlayer({ player, volume, shares, rates, games = 17 }) {
 }
 
 /**
- * Project a whole team, and report how its volume is allocated.
+ * Project a whole team, and report the counts against the volume they came out of.
  *
- * The allocation totals are the part worth watching. Shares that sum to less
- * than 100% mean carries nobody has been given; more than 100% means the same
- * carry handed to two backs. Neither is an error the model can resolve on your
- * behalf, so both are reported and left alone.
+ * ``assigned`` is what the rows add up to; ``unassigned`` is what the team
+ * volume has left over. A negative one means you have handed out more attempts
+ * than the offence is going to throw — not an error the model can settle, so it
+ * is reported rather than clamped.
  */
-export function projectTeam({ team, volume, allocations, leagueRates, games = 17 }) {
+export function projectTeam({ team, volume, allocations, games = 17 }) {
   const players = [];
-  const assigned = { pass: 0, rush: 0, recv: 0 };
+  const assigned = { pass_attempts: 0, carries: 0, targets: 0 };
+  const totals = Object.fromEntries(COUNT_FIELDS.map((field) => [field, 0]));
 
   for (const entry of team.roster) {
     if (!PROJECTED_POSITIONS.has(entry.position)) continue;
     const allocation = allocations[entry.player_id];
     if (!allocation) continue;
-    const shares = allocation.shares || { pass: 0, rush: 0, recv: 0 };
-    for (const key of ["pass", "rush", "recv"]) {
-      assigned[key] += shares[key] || 0;
-    }
-    if (!shares.pass && !shares.rush && !shares.recv) continue;
-    players.push(
-      projectPlayer({
-        player: entry,
-        volume,
-        shares,
-        rates: effectiveRates(entry, leagueRates, allocation.rates || {}),
-        games: allocation.games ?? games,
-      }),
-    );
+    const projected = projectPlayer({
+      player: entry,
+      counts: allocation.counts || {},
+      games: allocation.games ?? games,
+    });
+    for (const field of COUNT_FIELDS) totals[field] += projected.stats[field];
+    for (const field of Object.keys(assigned)) assigned[field] += projected.stats[field];
+    // A row of nothing is a player you have not projected, not a projection of zero.
+    if (Object.values(projected.stats).some((value) => value > 0)) players.push(projected);
   }
 
   players.sort((a, b) => b.points.ppr - a.points.ppr);
@@ -232,31 +171,22 @@ export function projectTeam({ team, volume, allocations, leagueRates, games = 17
     team: team.team,
     volume,
     players,
-    allocated: assigned,
-    unallocated: {
-      pass: 1 - assigned.pass,
-      rush: 1 - assigned.rush,
-      recv: 1 - assigned.recv,
+    totals,
+    assigned,
+    unassigned: {
+      pass_attempts: (volume.pass_attempts || 0) - assigned.pass_attempts,
+      carries: (volume.carries || 0) - assigned.carries,
+      targets: (volume.targets || 0) - assigned.targets,
     },
   };
 }
 
-/**
- * Seed a team's allocations from last season.
- *
- * The starting point is "2026 looks like 2025", which is wrong in a specific and
- * useful way: every share belonging to a player who left is simply missing, so
- * the unallocated total tells you exactly how much of the offense is up for
- * grabs before you have made a single decision.
- */
+/** Seed every projectable player from what he did here last season. */
 export function seedAllocations(team) {
   const allocations = {};
   for (const entry of team.roster) {
     if (!PROJECTED_POSITIONS.has(entry.position)) continue;
-    allocations[entry.player_id] = {
-      shares: defaultShares(entry, team.totals_2025),
-      rates: {},
-    };
+    allocations[entry.player_id] = { counts: seedCounts(entry) };
   }
   return allocations;
 }
@@ -356,42 +286,6 @@ export function positionInRange(value, { min, max }) {
  * guess" against every rate flags every non-quarterback and says nothing; the
  * question is only ever about the rates the volume actually reaches.
  */
-// A share this small is a rounding artifact — two carries for a receiver — and
-// the rate behind it moves the projection by under a point. Flagging a row over
-// it puts the noise back that this function exists to remove.
-const MATERIAL_SHARE = 0.01;
-
-export function relevantRates(shares = {}) {
-  const material = (value) => (value || 0) >= MATERIAL_SHARE;
-  const used = new Set();
-  if (material(shares.pass)) {
-    for (const name of [
-      "completion_rate", "yards_per_attempt", "pass_td_rate", "interception_rate",
-    ]) used.add(name);
-  }
-  if (material(shares.rush)) {
-    used.add("yards_per_carry");
-    used.add("rush_td_rate");
-  }
-  if (material(shares.recv)) {
-    for (const name of ["catch_rate", "yards_per_target", "rec_td_rate"]) used.add(name);
-  }
-  // Fumbles follow touches, which come from either running or catching.
-  if (material(shares.rush) || material(shares.recv)) used.add("fumble_rate");
-  return used;
-}
-
-/**
- * Whether a projection leans on a league median rather than the player's own
- * history, for any rate it actually uses.
- */
-export function isEstimated(player, leagueRates, allocation = {}) {
-  const used = relevantRates(allocation.shares);
-  if (!used.size) return false;
-  const sources = rateSources(player, leagueRates, allocation.rates || {});
-  return [...used].some((name) => sources[name] === "league");
-}
-
 /**
  * What a player scored last season in the format currently being read.
  *

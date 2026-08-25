@@ -338,16 +338,51 @@ tbody tr:hover .sticky-col { background: var(--bg); }
    worth seeing at a glance, since it is the number most likely to be wrong. */
 .is-estimated td.num { color: var(--ink-soft); }
 
-tfoot td {
-  padding: 8px;
-  border-top: 2px solid var(--line-strong);
+/* The totals sit under the headers rather than below the last player, so the
+   budget being spent stays in view while it is being spent. */
+.totals-row th,
+.totals-row td {
+  position: sticky;
+  top: 25px;
+  background: var(--panel);
+  border-bottom: 2px solid var(--line-strong);
+  padding: 5px 8px;
   font-weight: 600;
   font-size: 12.5px;
+  font-family: var(--mono);
+  z-index: 2;
 }
 
-tfoot .over { color: var(--bad); }
-tfoot .under { color: var(--warn); }
-tfoot .exact { color: var(--good); }
+.totals-row th {
+  font-family: inherit;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  left: 0;
+  z-index: 3;
+}
+
+.totals-row .over { color: var(--bad); }
+.totals-row .under { color: var(--warn); }
+.totals-row .exact { color: var(--good); }
+
+/* A typed count is the decision; it should look like a field, not a label. */
+.count-cell {
+  width: 62px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  padding: 2px 5px;
+  text-align: right;
+}
+
+.count-cell::-webkit-outer-spin-button,
+.count-cell::-webkit-inner-spin-button { appearance: none; margin: 0; }
+.count-cell { -moz-appearance: textfield; }
+
+/* Calculated, not typed — recessive, so the eye goes to the inputs. */
+td.derived, th.derived { color: var(--ink-faint); background: var(--bg); }
+th.derived { font-style: italic; }
 
 .empty { padding: 30px; text-align: center; color: var(--ink-faint); font-size: 13px; }
 

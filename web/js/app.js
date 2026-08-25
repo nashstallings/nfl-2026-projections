@@ -8,18 +8,20 @@
  */
 
 import {
+  COUNT_FIELDS,
   PROJECTED_POSITIONS,
   baselinePoints,
-  effectiveRates,
-  isEstimated,
+  derivedRates,
+  fantasyPoints,
   leagueRange,
   positionInRange,
-  rankInLeague,
   positionalRanks,
   projectTeam,
-  rateSources,
+  rankInLeague,
   seedAllocations,
+  seedCounts,
   seedVolume,
+  statsFromCounts,
 } from "./projection.js";
 import { initAuth, onChange as onAuthChange, status as authStatus } from "./auth.js";
 import { ariaSort, nextDirection, sortRows } from "./sort.js";
@@ -40,53 +42,41 @@ const VOLUME_FIELDS = [
   { key: "targets", label: "Targets" },
 ];
 
-// The rates worth exposing per position — the ones that position's volume
-// actually drives. A receiver has passing rates in the model; showing him an
-// input for them would be offering a decision that changes nothing.
-const RATE_FIELDS = {
-  completion_rate: { label: "Comp %", percent: true },
-  yards_per_attempt: { label: "Yds/att" },
-  pass_td_rate: { label: "Pass TD %", percent: true },
-  interception_rate: { label: "INT %", percent: true },
-  yards_per_carry: { label: "Yds/carry" },
-  rush_td_rate: { label: "Rush TD %", percent: true },
-  catch_rate: { label: "Catch %", percent: true },
-  yards_per_target: { label: "Yds/target" },
-  rec_td_rate: { label: "Rec TD %", percent: true },
-  fumble_rate: { label: "Fum/touch %", percent: true },
-};
+// The columns you type into, and which positions are asked for each. A receiver
+// has passing attempts in the model; an input for them would be a decision that
+// changes nothing.
+const PASSING = ["QB"];
+const RUSHING = ["QB", "RB", "FB", "WR", "TE"];
+const RECEIVING = ["RB", "FB", "WR", "TE"];
 
-const RATES_BY_POSITION = {
-  QB: ["completion_rate", "yards_per_attempt", "pass_td_rate", "interception_rate",
-       "yards_per_carry", "rush_td_rate", "fumble_rate"],
-  RB: ["yards_per_carry", "rush_td_rate", "catch_rate", "yards_per_target",
-       "rec_td_rate", "fumble_rate"],
-  WR: ["catch_rate", "yards_per_target", "rec_td_rate", "yards_per_carry",
-       "rush_td_rate", "fumble_rate"],
-};
-RATES_BY_POSITION.TE = RATES_BY_POSITION.WR;
-RATES_BY_POSITION.FB = RATES_BY_POSITION.RB;
-
-// The four rates that sit in the table itself, because they are the ones a
-// projection actually turns on. Each is offered only to the positions whose
-// volume drives it — a receiver has no yards per attempt worth arguing about.
-const INLINE_RATES = [
-  { key: "yards_per_attempt", positions: ["QB"], decimals: 2 },
-  { key: "yards_per_carry", positions: ["QB", "RB", "FB"], decimals: 2 },
-  { key: "yards_per_target", positions: ["RB", "FB", "WR", "TE"], decimals: 2 },
-  { key: "catch_rate", positions: ["RB", "FB", "WR", "TE"], percent: true, decimals: 1 },
+const COUNT_COLUMNS = [
+  { key: "pass_attempts", positions: PASSING },
+  { key: "passing_yards", positions: PASSING },
+  { key: "passing_tds", positions: PASSING, decimals: 1 },
+  { key: "interceptions", positions: PASSING, decimals: 1 },
+  { key: "carries", positions: RUSHING },
+  { key: "rushing_yards", positions: RUSHING },
+  { key: "rushing_tds", positions: RUSHING, decimals: 1 },
+  { key: "targets", positions: RECEIVING },
+  { key: "receptions", positions: RECEIVING },
+  { key: "receiving_yards", positions: RECEIVING },
+  { key: "receiving_tds", positions: RECEIVING, decimals: 1 },
+  { key: "fumbles_lost", positions: RUSHING, decimals: 1 },
 ];
 
-// What is left for the expandable panel, now that the four above are inline.
-const PANEL_RATES = [
-  "completion_rate", "pass_td_rate", "interception_rate",
-  "rush_td_rate", "rec_td_rate", "fumble_rate",
+// Read-outs, in the order they appear. Percentages are shown as such.
+const DERIVED_COLUMNS = [
+  { key: "yards_per_attempt", decimals: 2 },
+  { key: "yards_per_carry", decimals: 2 },
+  { key: "yards_per_target", decimals: 2 },
+  { key: "catch_rate", decimals: 1, percent: true },
 ];
 
-const SHARE_FIELDS = [
-  { key: "pass", volume: "pass_attempts", label: "Att" },
-  { key: "rush", volume: "carries", label: "Car" },
-  { key: "recv", volume: "targets", label: "Tgt" },
+// The three counts that come out of a team volume, for the totals row.
+const ALLOCATED = [
+  { key: "pass_attempts", label: "Att" },
+  { key: "carries", label: "Car" },
+  { key: "targets", label: "Tgt" },
 ];
 
 const app = {
@@ -102,8 +92,6 @@ const app = {
     allocation: { key: "last", direction: "desc" },
     board: { key: "pts", direction: "desc" },
   },
-  // Player ids whose rate panel is open. View state, not saved.
-  expanded: new Set(),
 };
 
 // -- helpers ---------------------------------------------------------------
@@ -274,7 +262,8 @@ function renderVolumeMeta() {
  * One row's worth of values, before any of it becomes HTML.
  *
  * Sorting needs numbers to compare, not the strings they are rendered as, so
- * the table is built in two passes: values here, markup after the sort.
+ * the table is built in two passes: values here, markup after the sort. The
+ * counts are what you typed; the rates and the points are arithmetic on them.
  */
 function allocationRows() {
   const team = app.baseline.teams[app.team];
@@ -285,52 +274,52 @@ function allocationRows() {
   return team.roster
     .filter((entry) => PROJECTED_POSITIONS.has(entry.position))
     .map((entry) => {
-      const allocation = working.allocations[entry.player_id] || { shares: {} };
+      const allocation = working.allocations[entry.player_id] || {};
+      const counts = statsFromCounts(allocation.counts || {});
       const result = projected.get(entry.player_id);
-      const stats = result?.stats;
-      const rates = effectiveRates(
-        entry, app.baseline.league_rates, allocation.rates || {},
-      );
+      const rates = derivedRates(counts);
       return {
         entry,
         allocation,
+        counts,
+        rates,
         result,
-        stats,
-        // Only counts rates his own volume actually reaches — judging against
-        // all of them flags every non-quarterback and says nothing.
-        estimated: isEstimated(entry, app.baseline.league_rates, allocation),
         player: entry.player,
         position: entry.position,
         last: baselinePoints(entry, app.format),
-        rates,
-        // Sorting reads the resolved rate, but only where the position uses it —
-        // otherwise a receiver's borrowed yards-per-attempt would sort against
-        // the quarterbacks' real ones.
+        ...counts,
+        // A rate a position never produces should not sort against the ones
+        // that do — a receiver's absent yards per attempt is not a low one.
         ...Object.fromEntries(
-          INLINE_RATES.map((spec) => [
-            spec.key,
-            spec.positions.includes(entry.position) ? rates[spec.key] : null,
-          ]),
+          DERIVED_COLUMNS.map((spec) => [spec.key, rates[spec.key]]),
         ),
-        share_pass: allocation.shares?.pass ?? 0,
-        share_rush: allocation.shares?.rush ?? 0,
-        share_recv: allocation.shares?.recv ?? 0,
-        att: stats?.pass_attempts ?? null,
-        car: stats?.carries ?? null,
-        tgt: stats?.targets ?? null,
-        yds: stats
-          ? stats.passing_yards + stats.rushing_yards + stats.receiving_yards
-          : null,
-        td: stats ? stats.passing_tds + stats.rushing_tds + stats.receiving_tds : null,
         pts: result?.points[app.format] ?? null,
         ppg: result?.per_game[app.format] ?? null,
       };
     });
 }
 
+const countInputs = (row) =>
+  COUNT_COLUMNS.map((spec) => {
+    if (!spec.positions.includes(row.position)) return '<td class="num">—</td>';
+    const value = row.counts[spec.key];
+    return `<td class="num">
+      <input class="count-cell" type="number" min="0" step="${spec.decimals ? "0.5" : "1"}"
+             data-player="${row.entry.player_id}" data-count="${spec.key}"
+             value="${value.toFixed(spec.decimals || 0)}" />
+    </td>`;
+  }).join("");
+
+const derivedCells = (row) =>
+  DERIVED_COLUMNS.map((spec) => {
+    const value = row.rates[spec.key];
+    if (value === null) return '<td class="num derived">—</td>';
+    const shown = spec.percent ? value * 100 : value;
+    return `<td class="num derived">${shown.toFixed(spec.decimals)}</td>`;
+  }).join("");
+
 function allocationRowMarkup(row) {
-  const working = teamState(app.team);
-  const { entry, allocation, result, stats } = row;
+  const { entry, result } = row;
 
   const tags = [];
   if (entry.is_rookie) tags.push('<span class="tag tag-rookie">rookie</span>');
@@ -338,112 +327,65 @@ function allocationRowMarkup(row) {
     tags.push(`<span class="tag tag-new">${entry.team_2025 || "new"}</span>`);
   }
 
-  const lastYear = row.last === null ? "—" : `${round(row.last, 0)} pts`;
-
-  const shareInputs = SHARE_FIELDS.map((field) => {
-    const share = allocation.shares?.[field.key] || 0;
-    // A category the team never uses does not need an input for it.
-    if (!working.volume[field.volume]) return '<td class="num">—</td>';
-    return `<td class="num">
-      <input class="share-input" type="number" step="0.5" min="0" max="100"
-             data-player="${entry.player_id}" data-share="${field.key}"
-             value="${(share * 100).toFixed(1)}" />
-    </td>`;
-  }).join("");
-
   return `
-    <tr class="${row.estimated ? "is-estimated" : ""}">
+    <tr>
       <td class="sticky-col">
         <button class="player-link" data-card="${entry.player_id}"
                 title="Recent seasons">${entry.player}</button>${tags.join("")}
-        <button class="rates-toggle" data-rates="${entry.player_id}"
-                title="Touchdown and turnover rates" aria-expanded="${app.expanded.has(entry.player_id)}"
-        >${app.expanded.has(entry.player_id) ? "\u2212" : "+"}</button>
       </td>
       <td>${entry.position}</td>
-      <td>${lastYear}</td>
-      ${shareInputs}
-      <td class="num">${stats ? round(stats.pass_attempts) : "—"}</td>
-      <td class="num">${stats ? round(stats.carries) : "—"}</td>
-      <td class="num">${stats ? round(stats.targets) : "—"}</td>
-      ${rateInputs(row)}
-      <td class="num">${stats ? round(row.yds) : "—"}</td>
-      <td class="num">${stats ? round(row.td, 1) : "—"}</td>
+      <td class="num">${row.last === null ? "—" : round(row.last, 0)}</td>
+      ${countInputs(row)}
+      ${derivedCells(row)}
       <td class="num">${result ? round(row.pts, 1) : "—"}</td>
       <td class="num">${result ? round(row.ppg, 1) : "—"}</td>
     </tr>`;
 }
 
 /**
- * The rate panel under a player.
+ * The totals row, at the top where the numbers being spent are visible while
+ * you spend them rather than a scroll below the last player.
  *
- * Every input is pre-filled with the rate the projection is actually using, so
- * an override starts from the model's answer rather than from an empty box.
- * Clearing one hands the rate back to the model.
+ * Only the three counts that come out of a team volume get a comparison; the
+ * rest are simply summed, because nothing constrains how many touchdowns an
+ * offence scores.
  */
-/**
- * The four editable rates that sit in the table.
- *
- * Pre-filled with the rate the projection is using, so a change starts from the
- * model's answer. A blank box hands the rate back. Positions that do not use a
- * rate get a dash rather than an input offering a decision that changes nothing.
- */
-function rateInputs(row) {
-  const { entry, allocation } = row;
-  const overrides = allocation.rates || {};
-  return INLINE_RATES.map((spec) => {
-    if (!spec.positions.includes(entry.position)) return '<td class="num">—</td>';
-    const value = row.rates[spec.key];
-    const shown = (spec.percent ? value * 100 : value).toFixed(spec.decimals);
-    const overridden = Number.isFinite(overrides[spec.key]);
-    return `<td class="num">
-      <input class="rate-cell ${overridden ? "is-override" : ""}" type="number"
-             step="${spec.percent ? "0.5" : "0.05"}" min="0"
-             data-player="${entry.player_id}" data-rate="${spec.key}"
-             data-percent="${spec.percent ? "1" : ""}" value="${shown}" />
-    </td>`;
-  }).join("");
-}
+function renderTotals(projection, working) {
+  const cell = (spec) => {
+    const total = projection.totals[spec.key] || 0;
+    const budget = working.volume[spec.key];
+    if (budget === undefined) {
+      return `<td class="num">${round(total, spec.decimals || 0)}</td>`;
+    }
+    const left = budget - total;
+    const state = Math.abs(left) < 0.5 ? "exact" : left < 0 ? "over" : "under";
+    return `<td class="num ${state}" title="${budget} in the volume above, ${round(Math.abs(left))} ${left < 0 ? "over" : "left"}">${round(total)}</td>`;
+  };
 
-function ratesRowMarkup(row) {
-  const { entry, allocation } = row;
-  if (!app.expanded.has(entry.player_id)) return "";
-
-  const overrides = allocation.rates || {};
-  const rates = effectiveRates(entry, app.baseline.league_rates, overrides);
-  const sources = rateSources(entry, app.baseline.league_rates, overrides);
-  const names = (RATES_BY_POSITION[entry.position] || []).filter((name) =>
-    PANEL_RATES.includes(name),
+  const unassigned = ALLOCATED.filter(
+    (spec) => Math.abs(projection.unassigned[spec.key]) >= 0.5,
   );
 
-  const fields = names
-    .map((name) => {
-      const spec = RATE_FIELDS[name];
-      const shown = spec.percent ? rates[name] * 100 : rates[name];
-      const overridden = sources[name] === "override";
-      return `
-        <div class="rate-field">
-          <label for="rate-${entry.player_id}-${name}">${spec.label}</label>
-          <input id="rate-${entry.player_id}-${name}"
-                 class="${overridden ? "is-override" : ""}"
-                 type="number" step="${spec.percent ? "0.1" : "0.05"}" min="0"
-                 data-player="${entry.player_id}" data-rate="${name}"
-                 data-percent="${spec.percent ? "1" : ""}"
-                 value="${shown.toFixed(spec.percent ? 1 : 2)}" />
-        </div>`;
-    })
-    .join("");
+  $("allocation-totals").innerHTML = `
+    <th class="sticky-col">Allocated</th>
+    <td></td>
+    <td></td>
+    ${COUNT_COLUMNS.map(cell).join("")}
+    ${DERIVED_COLUMNS.map(() => '<td class="num derived"></td>').join("")}
+    <td class="num">${round(
+      projection.players.reduce((sum, p) => sum + p.points[app.format], 0),
+      1,
+    )}</td>
+    <td></td>`;
 
-  return `
-    <tr class="rates-row">
-      <td colspan="16">
-        <div class="rates-grid">${fields}</div>
-        <p class="rates-note">
-          Pre-filled with what the projection is using. Clear a box to hand that
-          rate back to the model.
-        </p>
-      </td>
-    </tr>`;
+  $("allocation-hint").textContent = unassigned.length
+    ? `Type the numbers you expect. ${unassigned
+        .map((spec) => {
+          const left = projection.unassigned[spec.key];
+          return `${Math.abs(Math.round(left))} ${spec.label.toLowerCase()} ${left < 0 ? "over" : "left"}`;
+        })
+        .join(", ")} against the team volume above.`
+    : "Type the numbers you expect. Every category matches the team volume above.";
 }
 
 function renderAllocation() {
@@ -456,22 +398,13 @@ function renderAllocation() {
   );
 
   $("allocation-body").innerHTML =
-    sorted.map((row) => allocationRowMarkup(row) + ratesRowMarkup(row)).join("") ||
-    '<tr><td colspan="16" class="empty">No skill players on this roster.</td></tr>';
+    sorted.map(allocationRowMarkup).join("") ||
+    '<tr><td colspan="21" class="empty">No skill players on this roster.</td></tr>';
 
-  renderAllocationFoot(projection, working);
-  bindShareInputs();
-  bindRateInputs();
-  bindRateToggles();
+  renderTotals(projection, working);
+  bindCountInputs();
   bindPlayerCards();
   markSortedHeader("allocation-head", app.sort.allocation);
-
-  const unassigned = SHARE_FIELDS.filter(
-    (field) => Math.abs(projection.unallocated[field.key]) > 0.005,
-  );
-  $("allocation-hint").textContent = unassigned.length
-    ? "Shares are percentages of the team volume above. Anything left unassigned is volume nobody has been given — the row at the bottom tracks it."
-    : "Every category is fully allocated.";
 }
 
 /** Reflect the current sort on the headers, for sighted and screen readers alike. */
@@ -541,34 +474,56 @@ function renderAllocationFoot(projection, working) {
     </tr>`;
 }
 
+/**
+ * Repaint the derived cells of one row without touching its inputs.
+ *
+ * Rebuilding the row would take the cursor with it, so the rates, points and
+ * the totals are written in place while you type.
+ */
+function repaintRow(rowElement, playerId) {
+  const working = teamState(app.team);
+  const counts = statsFromCounts(working.allocations[playerId]?.counts || {});
+  const rates = derivedRates(counts);
+  const points = fantasyPoints(counts);
+
+  const derived = rowElement.querySelectorAll("td.derived");
+  DERIVED_COLUMNS.forEach((spec, index) => {
+    const value = rates[spec.key];
+    derived[index].textContent =
+      value === null ? "—" : (spec.percent ? value * 100 : value).toFixed(spec.decimals);
+  });
+
+  const numeric = rowElement.querySelectorAll("td.num");
+  numeric[numeric.length - 2].textContent = round(points[app.format], 1);
+  numeric[numeric.length - 1].textContent = round(points[app.format] / 17, 1);
+}
+
 /** Make sure a player has an allocation to write into before writing to it. */
 function allocationFor(playerId) {
   const working = commitTeam();
   if (!working.allocations[playerId]) {
-    working.allocations[playerId] = { shares: { pass: 0, rush: 0, recv: 0 }, rates: {} };
+    working.allocations[playerId] = { counts: statsFromCounts({}) };
+  }
+  if (!working.allocations[playerId].counts) {
+    working.allocations[playerId].counts = statsFromCounts({});
   }
   return working.allocations[playerId];
 }
 
-function bindRateInputs() {
-  for (const input of $("allocation-body").querySelectorAll("input[data-rate]")) {
+function bindCountInputs() {
+  for (const input of $("allocation-body").querySelectorAll("input[data-count]")) {
     input.addEventListener("input", (event) => {
-      const { player, rate, percent } = event.target.dataset;
-      const allocation = allocationFor(player);
-      allocation.rates = allocation.rates || {};
+      const { player, count } = event.target.dataset;
       const raw = event.target.value.trim();
-      if (raw === "") {
-        // An empty box is not a rate of zero — it is "you decide".
-        delete allocation.rates[rate];
-        event.target.classList.remove("is-override");
-      } else {
-        const value = Number(raw);
-        if (!Number.isFinite(value) || value < 0) return;
-        allocation.rates[rate] = percent ? value / 100 : value;
-        event.target.classList.add("is-override");
-      }
+      // A cleared box is on its way to a number, not a zero to act on yet.
+      if (raw === "") return;
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value < 0) return;
+
+      allocationFor(player).counts[count] = value;
       touched();
-      repaintDerived();
+      repaintRow(event.target.closest("tr"), player);
+      renderTotals(currentProjection(), teamState(app.team));
     });
   }
 }
@@ -577,66 +532,6 @@ function bindPlayerCards() {
   for (const button of $("allocation-body").querySelectorAll("button[data-card]")) {
     button.addEventListener("click", () => openPlayerCard(button.dataset.card));
   }
-}
-
-function bindRateToggles() {
-  for (const button of $("allocation-body").querySelectorAll("button[data-rates]")) {
-    button.addEventListener("click", () => {
-      const id = button.dataset.rates;
-      if (app.expanded.has(id)) app.expanded.delete(id);
-      else app.expanded.add(id);
-      renderAllocation();
-    });
-  }
-}
-
-function bindShareInputs() {
-  for (const input of $("allocation-body").querySelectorAll("input[data-share]")) {
-    input.addEventListener("input", (event) => {
-      const { player, share } = event.target.dataset;
-      const working = commitTeam();
-      if (!working.allocations[player]) {
-        working.allocations[player] = { shares: { pass: 0, rush: 0, recv: 0 }, rates: {} };
-      }
-      const value = Math.max(0, Number(event.target.value) || 0) / 100;
-      working.allocations[player].shares[share] = value;
-      touched();
-      // Repaint the derived columns without rebuilding the inputs, so the
-      // cursor stays where it was mid-number.
-      repaintDerived();
-    });
-  }
-}
-
-/** Update every computed cell in place, leaving the share inputs untouched. */
-function repaintDerived() {
-  const projection = currentProjection();
-  const projected = new Map(projection.players.map((p) => [p.player_id, p]));
-  const rows = $("allocation-body").querySelectorAll("tr");
-
-  for (const row of rows) {
-    if (row.classList.contains("rates-row")) continue;
-    const input = row.querySelector("input[data-share]");
-    if (!input) continue;
-    const result = projected.get(input.dataset.player);
-    const cells = row.querySelectorAll("td.num");
-    // Cells after the three share inputs: att, car, tgt, yds, td, pts, ppg.
-    const derived = Array.from(cells).slice(-7);
-    if (!result) {
-      derived.forEach((cell) => (cell.textContent = "—"));
-      continue;
-    }
-    const { stats } = result;
-    const yards = stats.passing_yards + stats.rushing_yards + stats.receiving_yards;
-    const tds = stats.passing_tds + stats.rushing_tds + stats.receiving_tds;
-    const values = [
-      round(stats.pass_attempts), round(stats.carries), round(stats.targets),
-      round(yards), round(tds, 1),
-      round(result.points[app.format], 1), round(result.per_game[app.format], 1),
-    ];
-    derived.forEach((cell, index) => (cell.textContent = values[index]));
-  }
-  renderAllocationFoot(projection, teamState(app.team));
 }
 
 function renderTeamView() {
@@ -731,7 +626,16 @@ function buildPayload() {
       volume: projection.volume,
       players: projection.players.map((player) => ({
         ...player,
-        shares: working.allocations[player.player_id]?.shares || {},
+        // Still written, but derived — the counts are the decision now, and
+        // the share is what they came to as a fraction of the team volume.
+        shares: {
+          pass: projection.volume.pass_attempts
+            ? player.stats.pass_attempts / projection.volume.pass_attempts : 0,
+          rush: projection.volume.carries
+            ? player.stats.carries / projection.volume.carries : 0,
+          recv: projection.volume.targets
+            ? player.stats.targets / projection.volume.targets : 0,
+        },
       })),
     };
   });
@@ -916,7 +820,6 @@ async function loadSave(saveId) {
   }
 
   app.state = restored;
-  app.expanded.clear();
   saveLocal(app.state);
   if (!app.baseline.teams[app.team]) app.team = teams[0];
   $("team-select").value = app.team;
@@ -1020,10 +923,15 @@ async function boot() {
   $("team-select").innerHTML = codes
     .map((code) => `<option value="${code}">${code}</option>`)
     .join("");
-  app.team = codes[0];
+  app.team = codes.includes(app.state.selected_team) ? app.state.selected_team : codes[0];
+  $("team-select").value = app.team;
 
   $("team-select").addEventListener("change", (event) => {
     app.team = event.target.value;
+    // Remembered, so a reload comes back to the team you were working on
+    // rather than to whichever is first alphabetically.
+    app.state.selected_team = app.team;
+    persist();
     renderTeamView();
   });
   $("format-select").addEventListener("change", (event) => {
@@ -1041,8 +949,7 @@ async function boot() {
       return;
     }
     delete app.state.teams[app.team];
-    app.expanded.clear();
-    touched();
+      touched();
     renderTeamView();
   });
   $("load-btn").addEventListener("click", openSaves);
