@@ -67,6 +67,22 @@ const RATES_BY_POSITION = {
 RATES_BY_POSITION.TE = RATES_BY_POSITION.WR;
 RATES_BY_POSITION.FB = RATES_BY_POSITION.RB;
 
+// The four rates that sit in the table itself, because they are the ones a
+// projection actually turns on. Each is offered only to the positions whose
+// volume drives it — a receiver has no yards per attempt worth arguing about.
+const INLINE_RATES = [
+  { key: "yards_per_attempt", positions: ["QB"], decimals: 2 },
+  { key: "yards_per_carry", positions: ["QB", "RB", "FB"], decimals: 2 },
+  { key: "yards_per_target", positions: ["RB", "FB", "WR", "TE"], decimals: 2 },
+  { key: "catch_rate", positions: ["RB", "FB", "WR", "TE"], percent: true, decimals: 1 },
+];
+
+// What is left for the expandable panel, now that the four above are inline.
+const PANEL_RATES = [
+  "completion_rate", "pass_td_rate", "interception_rate",
+  "rush_td_rate", "rec_td_rate", "fumble_rate",
+];
+
 const SHARE_FIELDS = [
   { key: "pass", volume: "pass_attempts", label: "Att" },
   { key: "rush", volume: "carries", label: "Car" },
@@ -272,6 +288,9 @@ function allocationRows() {
       const allocation = working.allocations[entry.player_id] || { shares: {} };
       const result = projected.get(entry.player_id);
       const stats = result?.stats;
+      const rates = effectiveRates(
+        entry, app.baseline.league_rates, allocation.rates || {},
+      );
       return {
         entry,
         allocation,
@@ -283,7 +302,16 @@ function allocationRows() {
         player: entry.player,
         position: entry.position,
         last: baselinePoints(entry, app.format),
-        games: allocation.games ?? result?.games ?? 17,
+        rates,
+        // Sorting reads the resolved rate, but only where the position uses it —
+        // otherwise a receiver's borrowed yards-per-attempt would sort against
+        // the quarterbacks' real ones.
+        ...Object.fromEntries(
+          INLINE_RATES.map((spec) => [
+            spec.key,
+            spec.positions.includes(entry.position) ? rates[spec.key] : null,
+          ]),
+        ),
         share_pass: allocation.shares?.pass ?? 0,
         share_rush: allocation.shares?.rush ?? 0,
         share_recv: allocation.shares?.recv ?? 0,
@@ -326,22 +354,19 @@ function allocationRowMarkup(row) {
   return `
     <tr class="${row.estimated ? "is-estimated" : ""}">
       <td class="sticky-col">
-        <span class="player-name">${entry.player}</span>${tags.join("")}
+        <button class="player-link" data-card="${entry.player_id}"
+                title="Recent seasons">${entry.player}</button>${tags.join("")}
         <button class="rates-toggle" data-rates="${entry.player_id}"
-                title="Efficiency rates" aria-expanded="${app.expanded.has(entry.player_id)}"
-        >${app.expanded.has(entry.player_id) ? "\u2212" : "+"} rates</button>
+                title="Touchdown and turnover rates" aria-expanded="${app.expanded.has(entry.player_id)}"
+        >${app.expanded.has(entry.player_id) ? "\u2212" : "+"}</button>
       </td>
       <td>${entry.position}</td>
       <td>${lastYear}</td>
-      <td class="num">
-        <input class="games-input" type="number" min="1" max="17" step="1"
-               data-player="${entry.player_id}" data-games
-               value="${allocation.games ?? 17}" />
-      </td>
       ${shareInputs}
       <td class="num">${stats ? round(stats.pass_attempts) : "—"}</td>
       <td class="num">${stats ? round(stats.carries) : "—"}</td>
       <td class="num">${stats ? round(stats.targets) : "—"}</td>
+      ${rateInputs(row)}
       <td class="num">${stats ? round(row.yds) : "—"}</td>
       <td class="num">${stats ? round(row.td, 1) : "—"}</td>
       <td class="num">${result ? round(row.pts, 1) : "—"}</td>
@@ -356,6 +381,30 @@ function allocationRowMarkup(row) {
  * an override starts from the model's answer rather than from an empty box.
  * Clearing one hands the rate back to the model.
  */
+/**
+ * The four editable rates that sit in the table.
+ *
+ * Pre-filled with the rate the projection is using, so a change starts from the
+ * model's answer. A blank box hands the rate back. Positions that do not use a
+ * rate get a dash rather than an input offering a decision that changes nothing.
+ */
+function rateInputs(row) {
+  const { entry, allocation } = row;
+  const overrides = allocation.rates || {};
+  return INLINE_RATES.map((spec) => {
+    if (!spec.positions.includes(entry.position)) return '<td class="num">—</td>';
+    const value = row.rates[spec.key];
+    const shown = (spec.percent ? value * 100 : value).toFixed(spec.decimals);
+    const overridden = Number.isFinite(overrides[spec.key]);
+    return `<td class="num">
+      <input class="rate-cell ${overridden ? "is-override" : ""}" type="number"
+             step="${spec.percent ? "0.5" : "0.05"}" min="0"
+             data-player="${entry.player_id}" data-rate="${spec.key}"
+             data-percent="${spec.percent ? "1" : ""}" value="${shown}" />
+    </td>`;
+  }).join("");
+}
+
 function ratesRowMarkup(row) {
   const { entry, allocation } = row;
   if (!app.expanded.has(entry.player_id)) return "";
@@ -363,7 +412,9 @@ function ratesRowMarkup(row) {
   const overrides = allocation.rates || {};
   const rates = effectiveRates(entry, app.baseline.league_rates, overrides);
   const sources = rateSources(entry, app.baseline.league_rates, overrides);
-  const names = RATES_BY_POSITION[entry.position] || [];
+  const names = (RATES_BY_POSITION[entry.position] || []).filter((name) =>
+    PANEL_RATES.includes(name),
+  );
 
   const fields = names
     .map((name) => {
@@ -385,7 +436,7 @@ function ratesRowMarkup(row) {
 
   return `
     <tr class="rates-row">
-      <td colspan="14">
+      <td colspan="16">
         <div class="rates-grid">${fields}</div>
         <p class="rates-note">
           Pre-filled with what the projection is using. Clear a box to hand that
@@ -406,13 +457,13 @@ function renderAllocation() {
 
   $("allocation-body").innerHTML =
     sorted.map((row) => allocationRowMarkup(row) + ratesRowMarkup(row)).join("") ||
-    '<tr><td colspan="14" class="empty">No skill players on this roster.</td></tr>';
+    '<tr><td colspan="16" class="empty">No skill players on this roster.</td></tr>';
 
   renderAllocationFoot(projection, working);
   bindShareInputs();
-  bindGamesInputs();
   bindRateInputs();
   bindRateToggles();
+  bindPlayerCards();
   markSortedHeader("allocation-head", app.sort.allocation);
 
   const unassigned = SHARE_FIELDS.filter(
@@ -499,21 +550,6 @@ function allocationFor(playerId) {
   return working.allocations[playerId];
 }
 
-function bindGamesInputs() {
-  for (const input of $("allocation-body").querySelectorAll("input[data-games]")) {
-    input.addEventListener("input", (event) => {
-      const value = Number(event.target.value);
-      const allocation = allocationFor(event.target.dataset.player);
-      // Out of range means the box is mid-edit, not that the answer is zero.
-      if (Number.isFinite(value) && value > 0 && value <= 17) {
-        allocation.games = Math.round(value);
-        touched();
-        repaintDerived();
-      }
-    });
-  }
-}
-
 function bindRateInputs() {
   for (const input of $("allocation-body").querySelectorAll("input[data-rate]")) {
     input.addEventListener("input", (event) => {
@@ -534,6 +570,12 @@ function bindRateInputs() {
       touched();
       repaintDerived();
     });
+  }
+}
+
+function bindPlayerCards() {
+  for (const button of $("allocation-body").querySelectorAll("button[data-card]")) {
+    button.addEventListener("click", () => openPlayerCard(button.dataset.card));
   }
 }
 
@@ -698,6 +740,121 @@ function buildPayload() {
     label: "",
     teams,
   };
+}
+
+// -- player card -----------------------------------------------------------
+
+/**
+ * Columns per position, because the numbers that matter differ.
+ *
+ * `derive` gets the season line and returns the cell; rates are computed here
+ * rather than stored, so a season with no volume shows a dash instead of a
+ * division by zero.
+ */
+const rate = (numerator, denominator, places = 2) =>
+  denominator > 0 ? (numerator / denominator).toFixed(places) : "—";
+
+const CARD_COLUMNS = {
+  QB: [
+    ["Att", (l) => l.pass_attempts],
+    ["Yds", (l) => l.passing_yards],
+    ["Y/A", (l) => rate(l.passing_yards, l.pass_attempts)],
+    ["Comp %", (l) => rate(l.completions * 100, l.pass_attempts, 0)],
+    ["TD", (l) => l.passing_tds],
+    ["TD %", (l) => rate(l.passing_tds * 100, l.pass_attempts, 1)],
+    ["INT", (l) => l.interceptions],
+    ["Car", (l) => l.carries],
+    ["Ru yds", (l) => l.rushing_yards],
+    ["Ru TD", (l) => l.rushing_tds],
+  ],
+  RB: [
+    ["Car", (l) => l.carries],
+    ["Yds", (l) => l.rushing_yards],
+    ["Y/C", (l) => rate(l.rushing_yards, l.carries)],
+    ["TD", (l) => l.rushing_tds],
+    ["Tgt", (l) => l.targets],
+    ["Rec", (l) => l.receptions],
+    ["Catch %", (l) => rate(l.receptions * 100, l.targets, 0)],
+    ["Re yds", (l) => l.receiving_yards],
+    ["Y/T", (l) => rate(l.receiving_yards, l.targets)],
+    ["Re TD", (l) => l.receiving_tds],
+  ],
+  WR: [
+    ["Tgt", (l) => l.targets],
+    ["Rec", (l) => l.receptions],
+    ["Catch %", (l) => rate(l.receptions * 100, l.targets, 0)],
+    ["Yds", (l) => l.receiving_yards],
+    ["Y/T", (l) => rate(l.receiving_yards, l.targets)],
+    ["Y/R", (l) => rate(l.receiving_yards, l.receptions)],
+    ["TD", (l) => l.receiving_tds],
+    ["Car", (l) => l.carries],
+    ["Ru yds", (l) => l.rushing_yards],
+  ],
+};
+CARD_COLUMNS.TE = CARD_COLUMNS.WR;
+CARD_COLUMNS.FB = CARD_COLUMNS.RB;
+
+// Fetched once, on the first card opened — most sessions never open one, and it
+// is as large as the baseline itself.
+let historyPromise = null;
+
+function loadHistory() {
+  if (!historyPromise) {
+    historyPromise = fetch("/data/history.json")
+      .then((response) => (response.ok ? response.json() : null))
+      .catch(() => null);
+  }
+  return historyPromise;
+}
+
+async function openPlayerCard(playerId) {
+  const entry = app.baseline.teams[app.team].roster.find(
+    (row) => row.player_id === playerId,
+  );
+  if (!entry) return;
+
+  const dialog = $("player-dialog");
+  $("card-name").textContent = `${entry.player} · ${entry.position}`;
+  $("card-hint").textContent = "Loading…";
+  $("card-table").innerHTML = "";
+  dialog.showModal();
+
+  const history = await loadHistory();
+  const lines = history?.players?.[playerId];
+  if (!lines?.length) {
+    $("card-hint").textContent = entry.is_rookie
+      ? "A rookie — no NFL seasons to show. The projection is running on league medians until you say otherwise."
+      : "No NFL seasons on record for him in the last four years.";
+    return;
+  }
+
+  const columns = CARD_COLUMNS[entry.position] || CARD_COLUMNS.WR;
+  $("card-hint").textContent =
+    "The seasons behind the rates. Per-game figures are in brackets.";
+  $("card-table").innerHTML = `
+    <thead>
+      <tr>
+        <th>Season</th><th>Tm</th><th class="num">G</th>
+        ${columns.map(([label]) => `<th class="num">${label}</th>`).join("")}
+        <th class="num">PPR</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${lines
+        .map(
+          (line) => `
+        <tr>
+          <td>${line.season}</td>
+          <td>${line.team}</td>
+          <td class="num">${line.games}</td>
+          ${columns.map(([, derive]) => `<td class="num">${derive(line)}</td>`).join("")}
+          <td class="num">${line.fantasy_points_ppr}
+            <span class="per-game">(${rate(line.fantasy_points_ppr, line.games, 1)})</span>
+          </td>
+        </tr>`,
+        )
+        .join("")}
+    </tbody>`;
 }
 
 function formatWhen(value) {

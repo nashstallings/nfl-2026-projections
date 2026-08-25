@@ -416,11 +416,71 @@ def team_games(games: list[dict[str, str]], season: int) -> dict[str, int]:
     return dict(played)
 
 
+# --------------------------------------------------------------------------
+# season history
+#
+# The baseline says what happened last year. Setting a rate for next year needs
+# more than that: a receiver at 9.1 yards per target in one season might be at
+# 7.2 across four, and which of those is the real number is exactly the judgement
+# the interface is asking for. So each rostered player gets his recent seasons,
+# in a separate file the dashboard fetches only when a card is opened.
+# --------------------------------------------------------------------------
+
+HISTORY_SEASONS = 4
+
+# Per-season fields for a card. Deliberately narrower than the baseline's — a
+# card is read, not computed from.
+HISTORY_STATS = (
+    "completions", "pass_attempts", "passing_yards", "passing_tds", "interceptions",
+    "carries", "rushing_yards", "rushing_tds",
+    "targets", "receptions", "receiving_yards", "receiving_tds",
+)
+
+
+def season_history(
+    seasons: list[int], cache_dir: Path, keep: set[str]
+) -> dict[str, list[dict[str, Any]]]:
+    """Per-season lines for the players on next year's rosters.
+
+    Restricted to ``keep`` because a card is only ever opened for a rostered
+    player, and carrying the other ~1,500 would triple the file for nothing.
+    """
+    history: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    for season in seasons:
+        weekly = fetch_csv(
+            f"{NFLVERSE}/stats_player/stats_player_week_{season}.csv", cache_dir
+        )
+        for player_id, player in season_totals(weekly).items():
+            if player_id not in keep:
+                continue
+            line = {
+                "season": season,
+                "position": player["position"],
+                "team": primary_team(player),
+                "games": player["games"],
+                "fantasy_points_ppr": round(player["fantasy_points_ppr"], 1),
+                **{stat: round(player[stat]) for stat in HISTORY_STATS},
+            }
+            history[player_id].append(line)
+
+    # Newest first: the season being projected from is the one to read first.
+    for lines in history.values():
+        lines.sort(key=lambda line: line["season"], reverse=True)
+    return dict(history)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--season", type=int, default=2025)
     parser.add_argument("--projection-season", type=int, default=2026)
     parser.add_argument("--out", type=Path, default=Path("data/baseline.json"))
+    parser.add_argument("--history-out", type=Path, default=Path("data/history.json"))
+    parser.add_argument(
+        "--history-seasons",
+        type=int,
+        default=HISTORY_SEASONS,
+        help="How many seasons of per-player history to write, ending at --season.",
+    )
     parser.add_argument("--cache-dir", type=Path, default=Path(".cache"))
     args = parser.parse_args(argv)
 
@@ -431,6 +491,27 @@ def main(argv: list[str] | None = None) -> int:
         cache_dir=args.cache_dir,
     )
     rostered = sum(len(team["roster"]) for team in baseline["teams"].values())
+
+    # History is written alongside, and only for players on a 2026 roster.
+    keep = {
+        entry["player_id"]
+        for team in baseline["teams"].values()
+        for entry in team["roster"]
+    }
+    seasons = list(range(args.season - args.history_seasons + 1, args.season + 1))
+    history = {
+        "seasons": seasons,
+        "generated_at": baseline["generated_at"],
+        "players": season_history(seasons, args.cache_dir, keep),
+    }
+    args.history_out.parent.mkdir(parents=True, exist_ok=True)
+    args.history_out.write_text(json.dumps(history, separators=(",", ":")), encoding="utf-8")
+    logger.info(
+        "wrote %s — %s players over %s",
+        args.history_out,
+        len(history["players"]),
+        ", ".join(str(season) for season in seasons),
+    )
 
     # Rosters change in bursts — a cutdown, a trade — and are static in between.
     # Rewriting an identical file would change only the timestamp, and since a

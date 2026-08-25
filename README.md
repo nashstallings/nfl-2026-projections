@@ -159,17 +159,31 @@ volume, then the league median at his position. The volume floors for "real
 volume" are 100 pass attempts, 50 carries, 30 targets — below those a player's
 own rate is noise, and the median is the better estimate.
 
-Both are editable per player. **`+ rates`** beside a name opens that player's
-efficiency rates, pre-filled with what the projection is currently using;
-change one to override it, clear the box to hand it back to the model. An
-overridden rate is outlined in the accent colour.
+Every rate is editable. The four that decide a projection — **Y/A, Y/C, Y/T and
+Catch %** — sit in the table itself, pre-filled with what the projection is
+using; type over one to override it, clear the box to hand it back to the model.
+An overridden rate turns the accent colour. Positions that do not use a rate get
+a dash rather than an input offering a decision that changes nothing.
 
-**`G`** sets games played. It divides the season total into a per-game figure —
-it does **not** shrink the volume, because the shares are shares of the *whole
-season*. A back you expect to miss five games is expressed by lowering his
-share and raising his backup's; `G` then tells you what his per-game rate looks
-like over the games he does play. That is the number to compare against a
-healthy player's PPG.
+**`+`** beside a name opens the rest — touchdown rates, interception rate,
+completion rate, fumbles per touch — which matter but are rarely the argument.
+
+### The player card
+
+Click a name for his **last four seasons**: the volume, the rates, and the
+fantasy points, newest first. This is the context the table cannot give you.
+Justin Jefferson at 7.43 yards per target in 2025 looks like one thing until you
+see 9.83, 10.74 and 9.95 behind it, and then the question is whether 2025 was
+the change or the noise. That question is the whole job, and the card is where
+it gets answered.
+
+Columns follow the position — a quarterback's card leads with attempts, yards
+per attempt and touchdown rate; a receiver's with targets, catch rate and yards
+per target. Rookies get a card saying they have no seasons, which is itself the
+answer: the projection is on league medians until you overrule it.
+
+The history is a separate file, fetched the first time a card is opened, because
+most sessions never open one.
 
 Kickers are excluded, from the data as well as the model. They score from field
 goals rather than a share of anyone's attempts, so there is nothing for this to
