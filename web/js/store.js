@@ -12,7 +12,7 @@
  * guarded and the app runs — losing only persistence — when it fails.
  */
 
-import { authHeader } from "./auth.js";
+import { authHeader, refresh } from "./auth.js";
 
 const KEY = "nfl-2026-projections/v1";
 
@@ -67,19 +67,47 @@ export function debounce(fn, delay = 400) {
 }
 
 /**
+ * Whether a refusal is one a fresh token would fix.
+ *
+ * Distinguishes "your hour is up" from "you are not allowed to write here" —
+ * only the first is worth re-prompting for. Re-prompting on the second would
+ * ask someone to sign in again to be told no a second time.
+ */
+export function isStaleToken(status, detail) {
+  if (status !== 401) return false;
+  const text = String(detail || "").toLowerCase();
+  if (text.includes("not permitted") || text.includes("nobody may write")) return false;
+  return text.includes("expired") || text.includes("invalid google token")
+    || text.includes("missing bearer token");
+}
+
+async function postProjections(payload) {
+  const response = await fetch("/api/projections", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json().catch(() => ({}));
+  return { response, body };
+}
+
+/**
  * Push a projection set to BigQuery.
  *
  * Errors are returned rather than thrown: the browser already holds the work,
- * so a failed save is a message to show, not an exception to unwind.
+ * so a failed save is a message to show, not an exception to unwind. One retry,
+ * and only after a token refresh actually produced a new token — retrying the
+ * same rejected credential just fails twice.
  */
 export async function saveRemote(payload) {
   try {
-    const response = await fetch("/api/projections", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader() },
-      body: JSON.stringify(payload),
-    });
-    const body = await response.json().catch(() => ({}));
+    let { response, body } = await postProjections(payload);
+
+    if (isStaleToken(response.status, body.detail)) {
+      const token = await refresh();
+      if (token) ({ response, body } = await postProjections(payload));
+    }
+
     if (!response.ok) {
       return { ok: false, error: body.detail || `save failed (${response.status})` };
     }

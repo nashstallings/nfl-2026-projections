@@ -23,8 +23,12 @@ SA_EMAIL="${RUNTIME_SA}@${PROJECT}.iam.gserviceaccount.com"
 
 echo "project ${PROJECT} · dataset ${DATASET} · table ${TABLE} · ${LOCATION}"
 
+# artifactregistry is needed because `gcloud run deploy --source` builds an
+# image and pushes it there; without it the first deploy fails during the build
+# rather than at validation, which is a much longer way round to the same news.
 gcloud services enable \
   bigquery.googleapis.com run.googleapis.com cloudbuild.googleapis.com \
+  artifactregistry.googleapis.com \
   --project="${PROJECT}" --quiet
 
 # -- BigQuery ---------------------------------------------------------------

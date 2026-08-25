@@ -56,6 +56,9 @@ if [[ -n "${MISSING}" ]]; then
   exit 1
 fi
 
+# The ^|^ prefix changes the delimiter gcloud splits this list on. The default
+# is a comma, which ALLOWED_EMAILS uses to separate addresses — so a second
+# address would be read as another variable name and rejected.
 gcloud run deploy "${SERVICE}" \
   --project="${PROJECT}" \
   --region="${REGION}" \
@@ -65,7 +68,7 @@ gcloud run deploy "${SERVICE}" \
   --min-instances=0 \
   --max-instances=2 \
   --memory=512Mi \
-  --set-env-vars="GCP_PROJECT=${PROJECT},BQ_DATASET=${DATASET},BQ_TABLE=${TABLE},BIGQUERY_ENABLED=true,GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},ALLOWED_EMAILS=${ALLOWED_EMAILS}" \
+  --set-env-vars="^|^GCP_PROJECT=${PROJECT}|BQ_DATASET=${DATASET}|BQ_TABLE=${TABLE}|BIGQUERY_ENABLED=true|GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}|ALLOWED_EMAILS=${ALLOWED_EMAILS}" \
   --quiet
 
 URL="$(gcloud run services describe "${SERVICE}" --project="${PROJECT}" --region="${REGION}" --format='value(status.url)')"

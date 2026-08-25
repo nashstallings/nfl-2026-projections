@@ -20,6 +20,11 @@ const state = {
   listeners: new Set(),
 };
 
+// A refresh in flight. Google's callback is the only way a new token arrives,
+// so a promise waiting here is what turns that callback into something a save
+// can await.
+let pendingRefresh = null;
+
 function announce() {
   for (const listener of state.listeners) listener(status());
 }
@@ -76,7 +81,47 @@ function emailFromToken(token) {
 function handleCredential(response) {
   state.token = response?.credential || null;
   state.email = state.token ? emailFromToken(state.token) : null;
+  if (pendingRefresh) {
+    const settle = pendingRefresh.settle;
+    pendingRefresh = null;
+    settle(state.token);
+  }
   announce();
+}
+
+/**
+ * Ask Google for a fresh token.
+ *
+ * ID tokens last an hour. An evening spent allocating four teams outlives that
+ * comfortably, and the first save afterwards would otherwise fail with an
+ * expiry message and no way forward but reloading the page — losing nothing,
+ * since the browser holds the work, but for no reason the person can see.
+ *
+ * Resolves with the new token, or null if the prompt was dismissed or never
+ * answered. Never rejects: the caller is a save that already has a fallback.
+ */
+export function refresh({ timeoutMs = 20000 } = {}) {
+  if (!state.clientId || !window.google?.accounts?.id) return Promise.resolve(null);
+  if (pendingRefresh) return pendingRefresh.promise;
+
+  let settle;
+  const promise = new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingRefresh = null;
+      resolve(null);
+    }, timeoutMs);
+    settle = (token) => {
+      clearTimeout(timer);
+      resolve(token);
+    };
+  });
+  pendingRefresh = { promise, settle };
+
+  // disableAutoSelect first, or Google may hand back the same cached token it
+  // just told us was stale.
+  window.google.accounts.id.disableAutoSelect();
+  window.google.accounts.id.prompt();
+  return promise;
 }
 
 /**
