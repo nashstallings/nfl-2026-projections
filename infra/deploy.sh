@@ -41,52 +41,19 @@ SA_EMAIL="${RUNTIME_SA}@${PROJECT}.iam.gserviceaccount.com"
 
 echo "project ${PROJECT} · region ${REGION} · service ${SERVICE}"
 
-gcloud services enable \
-  run.googleapis.com cloudbuild.googleapis.com bigquery.googleapis.com \
-  --project="${PROJECT}" --quiet
-
-if gcloud iam service-accounts describe "${SA_EMAIL}" --project="${PROJECT}" >/dev/null 2>&1; then
-  echo "  runtime service account exists"
-else
-  gcloud iam service-accounts create "${RUNTIME_SA}" \
-    --project="${PROJECT}" \
-    --display-name="NFL projections dashboard (Cloud Run)"
-  echo "  runtime service account created"
-fi
-
-# jobUser to run the insert, dataEditor scoped to the one dataset rather than
-# the project — this service has no business reading anything else in BigQuery.
-gcloud projects add-iam-policy-binding "${PROJECT}" \
-  --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/bigquery.jobUser" \
-  --condition=None --quiet >/dev/null
-
-# bootstrap.sh has to have run first; without the dataset the grant below reads
-# an empty policy and the deploy succeeds into a service that cannot write.
+# Prerequisites belong to bootstrap.sh, so both deploy paths get them. Checking
+# rather than creating keeps the two paths honest with each other: if this
+# script created what Actions cannot, the two would drift.
+MISSING=""
 if ! bq --project_id="${PROJECT}" show --dataset "${PROJECT}:${DATASET}" >/dev/null 2>&1; then
-  echo "dataset ${PROJECT}:${DATASET} does not exist — run ./infra/bootstrap.sh first" >&2
-  exit 1
+  MISSING="the ${DATASET} dataset"
 fi
-
-TMP_POLICY="$(mktemp)"
-trap 'rm -f "${TMP_POLICY}"' EXIT
-bq --project_id="${PROJECT}" show --format=prettyjson "${PROJECT}:${DATASET}" > "${TMP_POLICY}"
-if grep -q "${SA_EMAIL}" "${TMP_POLICY}"; then
-  echo "  dataset access already granted"
-else
-  python3 - "${TMP_POLICY}" "${SA_EMAIL}" <<'PY'
-import json, sys
-path, member = sys.argv[1], sys.argv[2]
-with open(path) as handle:
-    dataset = json.load(handle)
-dataset.setdefault("access", []).append(
-    {"role": "WRITER", "userByEmail": member}
-)
-with open(path, "w") as handle:
-    json.dump(dataset, handle)
-PY
-  bq --project_id="${PROJECT}" update --source "${TMP_POLICY}" "${PROJECT}:${DATASET}"
-  echo "  dataset write access granted"
+if ! gcloud iam service-accounts describe "${SA_EMAIL}" --project="${PROJECT}" >/dev/null 2>&1; then
+  MISSING="${MISSING:+${MISSING} and }the ${SA_EMAIL} service account"
+fi
+if [[ -n "${MISSING}" ]]; then
+  echo "missing ${MISSING} — run ./infra/bootstrap.sh first" >&2
+  exit 1
 fi
 
 gcloud run deploy "${SERVICE}" \

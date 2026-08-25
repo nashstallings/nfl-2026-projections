@@ -30,14 +30,21 @@ gcloud config set project ff-python-api
 ./infra/bootstrap.sh
 ```
 
-Creates the `projections` dataset and the `player_projections` table, in the
-`US` multi-region so it can be joined to `nflreadpy`. Safe to re-run — both
-steps are skipped if they already exist.
+Creates four things, all of which a deploy assumes already exist: the
+`projections` dataset, the `player_projections` table, the service account
+Cloud Run runs as, and that account's permission to write to the dataset. Safe
+to re-run — every step is skipped if it is already done.
 
-Confirm:
+Skipping this and going straight to a deploy fails with
+`Permission 'iam.serviceaccounts.actAs' denied`, which reads like the deployer
+is missing a permission when really the runtime account was never created.
+
+Confirm both:
 
 ```bash
 bq show ff-python-api:projections.player_projections
+gcloud iam service-accounts describe \
+  nfl-projections-run@ff-python-api.iam.gserviceaccount.com
 ```
 
 ---
