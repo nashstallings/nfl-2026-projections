@@ -98,8 +98,11 @@ Neither gets corrected for you — the correction is the projection.
 position. QB1 through QB12 is a decision; 285 points on its own is not.
 
 Rows in grey are running on a **league-median rate** rather than the player's
-own, which is the model's way of saying it is guessing. That is always true of
-rookies and usually true of backups.
+own, for a rate his own volume actually reaches — the model saying it is
+guessing about something that matters. A receiver has no passing rates and
+never will, but he is never given a pass attempt either, so that gap does not
+grey his row. Rookies given volume are always grey; so are backups asked to do
+something they have no history of.
 
 ## Saving
 
@@ -146,10 +149,14 @@ Every projected stat is volume times a rate:
 | Receiving | team targets × share | catch rate, yards/target, TD/target |
 | Fumbles | carries + receptions | fumbles lost per touch |
 
-Rates resolve in three steps: an override you typed, then the rate the player
-earned last season on real volume, then the league median at his position. The
-volume floors for "real volume" are 100 pass attempts, 50 carries, 30 targets —
-below those a player's own rate is noise, and the median is the better estimate.
+Rates resolve in two steps: the rate the player earned last season on real
+volume, then the league median at his position. The volume floors for "real
+volume" are 100 pass attempts, 50 carries, 30 targets — below those a player's
+own rate is noise, and the median is the better estimate.
+
+The model also accepts a per-player rate override, and a games-played figure
+other than 17, but **neither is reachable from the interface yet** — the `G`
+column is currently read-only. Both are one input each if you want them.
 
 Kickers are excluded. They do not score off offensive volume, so the model has
 nothing to say about them.

@@ -348,3 +348,60 @@ export function positionInRange(value, { min, max }) {
   if (!(max > min)) return 0;
   return Math.min(1, Math.max(0, (value - min) / (max - min)));
 }
+
+/** Which rates a player's projection actually depends on, given his shares.
+ *
+ * A receiver has no passing rates and never will, but he is also never assigned
+ * a pass attempt, so the gap does not touch his projection. Judging "is this a
+ * guess" against every rate flags every non-quarterback and says nothing; the
+ * question is only ever about the rates the volume actually reaches.
+ */
+// A share this small is a rounding artifact — two carries for a receiver — and
+// the rate behind it moves the projection by under a point. Flagging a row over
+// it puts the noise back that this function exists to remove.
+const MATERIAL_SHARE = 0.01;
+
+export function relevantRates(shares = {}) {
+  const material = (value) => (value || 0) >= MATERIAL_SHARE;
+  const used = new Set();
+  if (material(shares.pass)) {
+    for (const name of [
+      "completion_rate", "yards_per_attempt", "pass_td_rate", "interception_rate",
+    ]) used.add(name);
+  }
+  if (material(shares.rush)) {
+    used.add("yards_per_carry");
+    used.add("rush_td_rate");
+  }
+  if (material(shares.recv)) {
+    for (const name of ["catch_rate", "yards_per_target", "rec_td_rate"]) used.add(name);
+  }
+  // Fumbles follow touches, which come from either running or catching.
+  if (material(shares.rush) || material(shares.recv)) used.add("fumble_rate");
+  return used;
+}
+
+/**
+ * Whether a projection leans on a league median rather than the player's own
+ * history, for any rate it actually uses.
+ */
+export function isEstimated(player, leagueRates, allocation = {}) {
+  const used = relevantRates(allocation.shares);
+  if (!used.size) return false;
+  const sources = rateSources(player, leagueRates, allocation.rates || {});
+  return [...used].some((name) => sources[name] === "league");
+}
+
+/**
+ * What a player scored last season in the format currently being read.
+ *
+ * The baseline stores standard and PPR; half is the midpoint, since the only
+ * difference between the two is a point per reception.
+ */
+export function baselinePoints(entry, format = "ppr") {
+  const baseline = entry?.baseline;
+  if (!baseline) return null;
+  if (format === "std") return baseline.fantasy_points_std;
+  if (format === "ppr") return baseline.fantasy_points_ppr;
+  return (baseline.fantasy_points_std + baseline.fantasy_points_ppr) / 2;
+}

@@ -16,8 +16,11 @@ import {
   leagueRange,
   positionInRange,
   rankInLeague,
+  relevantRates,
   effectiveRates,
+  baselinePoints,
   fantasyPoints,
+  isEstimated,
   positionalRanks,
   projectPlayer,
   projectStats,
@@ -464,5 +467,92 @@ describe("league context", () => {
 
   test("a degenerate range does not divide by zero", () => {
     assert.equal(positionInRange(5, { min: 10, max: 10 }), 0);
+  });
+});
+
+describe("estimated flag", () => {
+  const leagueRates = {
+    WR: { catch_rate: 0.63, yards_per_target: 7.6, rec_td_rate: 0.05, fumble_rate: 0.002 },
+    QB: { completion_rate: 0.65, yards_per_attempt: 6.9, pass_td_rate: 0.045, interception_rate: 0.02 },
+  };
+  const receiver = {
+    position: "WR",
+    rates: { catch_rate: 0.7, yards_per_target: 9.1, rec_td_rate: 0.06, fumble_rate: 0 },
+  };
+
+  test("only the rates a player's own volume reaches are considered", () => {
+    // He has every receiving rate and no passing rate — which is every
+    // receiver, and is not a reason to call his projection a guess.
+    const allocation = { shares: { pass: 0, rush: 0, recv: 0.3 } };
+    assert.equal(isEstimated(receiver, leagueRates, allocation), false);
+  });
+
+  test("a missing rate the player does use is flagged", () => {
+    // Give him carries he has no rushing history for.
+    const allocation = { shares: { pass: 0, rush: 0.1, recv: 0.3 } };
+    assert.equal(isEstimated(receiver, leagueRates, allocation), true);
+  });
+
+  test("a player with no shares at all is not flagged", () => {
+    assert.equal(isEstimated(receiver, leagueRates, { shares: {} }), false);
+  });
+
+  test("a rookie given volume is flagged", () => {
+    const rookie = { position: "WR", rates: {} };
+    assert.equal(
+      isEstimated(rookie, leagueRates, { shares: { recv: 0.2 } }),
+      true,
+    );
+  });
+
+  test("relevantRates maps each share to the rates it drives", () => {
+    assert.deepEqual([...relevantRates({ rush: 0.5 })].sort(), [
+      "fumble_rate", "rush_td_rate", "yards_per_carry",
+    ]);
+    assert.deepEqual([...relevantRates({ pass: 1 })].sort(), [
+      "completion_rate", "interception_rate", "pass_td_rate", "yards_per_attempt",
+    ]);
+    assert.equal(relevantRates({}).size, 0);
+  });
+});
+
+describe("baselinePoints", () => {
+  const entry = { baseline: { fantasy_points_std: 117.5, fantasy_points_ppr: 201.5 } };
+
+  test("each format reads its own number", () => {
+    assert.equal(baselinePoints(entry, "std"), 117.5);
+    assert.equal(baselinePoints(entry, "ppr"), 201.5);
+  });
+
+  test("half PPR is the midpoint, since the gap is one point per catch", () => {
+    assert.equal(baselinePoints(entry, "half_ppr"), 159.5);
+  });
+
+  test("a player with no 2025 season has no number rather than a zero", () => {
+    assert.equal(baselinePoints({ baseline: null }, "ppr"), null);
+    assert.equal(baselinePoints(undefined, "ppr"), null);
+  });
+});
+
+describe("material share floor", () => {
+  test("a share under 1% does not drag in its rates", () => {
+    // Two carries for a receiver. The rate behind them is worth under a point.
+    assert.equal(relevantRates({ rush: 0.005, recv: 0.3 }).has("yards_per_carry"), false);
+  });
+
+  test("a share at 1% does", () => {
+    assert.equal(relevantRates({ rush: 0.01 }).has("yards_per_carry"), true);
+  });
+
+  test("a receiver with a token rush share is not called a guess", () => {
+    const receiver = {
+      position: "WR",
+      rates: { catch_rate: 0.7, yards_per_target: 9.1, rec_td_rate: 0.06, fumble_rate: 0 },
+    };
+    const leagueRates = { WR: { yards_per_carry: 4.3, rush_td_rate: 0.03 } };
+    assert.equal(
+      isEstimated(receiver, leagueRates, { shares: { rush: 0.005, recv: 0.3 } }),
+      false,
+    );
   });
 });

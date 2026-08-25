@@ -9,13 +9,14 @@
 
 import {
   PROJECTED_POSITIONS,
+  baselinePoints,
   effectiveRates,
+  isEstimated,
   leagueRange,
   positionInRange,
   rankInLeague,
   positionalRanks,
   projectTeam,
-  rateSources,
   seedAllocations,
   seedVolume,
 } from "./projection.js";
@@ -238,17 +239,17 @@ function allocationRows() {
       const allocation = working.allocations[entry.player_id] || { shares: {} };
       const result = projected.get(entry.player_id);
       const stats = result?.stats;
-      const sources = rateSources(entry, app.baseline.league_rates, allocation.rates);
       return {
         entry,
         allocation,
         result,
         stats,
-        // Anyone whose efficiency is a positional median rather than his own.
-        estimated: Object.values(sources).some((source) => source === "league"),
+        // Only counts rates his own volume actually reaches — judging against
+        // all of them flags every non-quarterback and says nothing.
+        estimated: isEstimated(entry, app.baseline.league_rates, allocation),
         player: entry.player,
         position: entry.position,
-        last: entry.baseline?.fantasy_points_ppr ?? null,
+        last: baselinePoints(entry, app.format),
         games: result?.games ?? 17,
         share_pass: allocation.shares?.pass ?? 0,
         share_rush: allocation.shares?.rush ?? 0,
@@ -276,7 +277,7 @@ function allocationRowMarkup(row) {
     tags.push(`<span class="tag tag-new">${entry.team_2025 || "new"}</span>`);
   }
 
-  const lastYear = entry.baseline ? `${round(entry.baseline.fantasy_points_ppr, 0)} pts` : "—";
+  const lastYear = row.last === null ? "—" : `${round(row.last, 0)} pts`;
 
   const shareInputs = SHARE_FIELDS.map((field) => {
     const share = allocation.shares?.[field.key] || 0;
