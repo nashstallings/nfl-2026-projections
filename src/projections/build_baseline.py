@@ -34,7 +34,11 @@ logger = logging.getLogger("baseline")
 NFLVERSE = "https://github.com/nflverse/nflverse-data/releases/download"
 GAMES_URL = "https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv"
 
-FANTASY_POSITIONS = ("QB", "RB", "WR", "TE", "K", "FB")
+# Kickers are deliberately absent. They score from field goals, not from a share
+# of anyone's attempts, so the volume model has nothing to say about them — and
+# 43 roster spots that render nowhere are weight in a file every visitor loads.
+# Adding "K" back here is all it takes if the model ever scores them.
+FANTASY_POSITIONS = ("QB", "RB", "WR", "TE", "FB")
 
 # nflverse spells a few clubs differently between its roster and stats releases.
 # Left unnormalized, every Cardinal reads as having changed teams.

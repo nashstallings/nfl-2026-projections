@@ -115,6 +115,11 @@ Two tiers, and they do different jobs:
   Saves are never overwritten, so the table accumulates what you believed and
   when — which is the part that gets interesting once the season starts.
 
+**Load** reopens any of them. Each row stores the inputs — the team volume and
+each player's shares and games — beside what they produced, so a save is enough
+to put you back where you were. Loading replaces what is in the browser, so it
+is a restore rather than a merge.
+
 **Export** writes the whole projection to a JSON file, which works signed out
 and is the way to hand a projection to something else.
 
@@ -154,12 +159,22 @@ volume, then the league median at his position. The volume floors for "real
 volume" are 100 pass attempts, 50 carries, 30 targets — below those a player's
 own rate is noise, and the median is the better estimate.
 
-The model also accepts a per-player rate override, and a games-played figure
-other than 17, but **neither is reachable from the interface yet** — the `G`
-column is currently read-only. Both are one input each if you want them.
+Both are editable per player. **`+ rates`** beside a name opens that player's
+efficiency rates, pre-filled with what the projection is currently using;
+change one to override it, clear the box to hand it back to the model. An
+overridden rate is outlined in the accent colour.
 
-Kickers are excluded. They do not score off offensive volume, so the model has
-nothing to say about them.
+**`G`** sets games played. It divides the season total into a per-game figure —
+it does **not** shrink the volume, because the shares are shares of the *whole
+season*. A back you expect to miss five games is expressed by lowering his
+share and raising his backup's; `G` then tells you what his per-game rate looks
+like over the games he does play. That is the number to compare against a
+healthy player's PPG.
+
+Kickers are excluded, from the data as well as the model. They score from field
+goals rather than a share of anyone's attempts, so there is nothing for this to
+project — and 43 roster spots that render nowhere are weight in a file every
+visitor downloads. `FANTASY_POSITIONS` in `build_baseline.py` brings them back.
 
 Scoring is standard (0.04/passing yard, 4 per passing TD, −2 per interception,
 0.1/rushing and receiving yard, 6 per TD, −2 per fumble lost), with half and

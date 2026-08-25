@@ -17,6 +17,7 @@ import {
   rankInLeague,
   positionalRanks,
   projectTeam,
+  rateSources,
   seedAllocations,
   seedVolume,
 } from "./projection.js";
@@ -25,9 +26,12 @@ import { ariaSort, nextDirection, sortRows } from "./sort.js";
 import {
   debounce,
   downloadJson,
+  listSaves,
   loadLocal,
+  loadRemote,
   saveLocal,
   saveRemote,
+  stateFromRows,
 } from "./store.js";
 
 const VOLUME_FIELDS = [
@@ -35,6 +39,33 @@ const VOLUME_FIELDS = [
   { key: "carries", label: "Carries" },
   { key: "targets", label: "Targets" },
 ];
+
+// The rates worth exposing per position — the ones that position's volume
+// actually drives. A receiver has passing rates in the model; showing him an
+// input for them would be offering a decision that changes nothing.
+const RATE_FIELDS = {
+  completion_rate: { label: "Comp %", percent: true },
+  yards_per_attempt: { label: "Yds/att" },
+  pass_td_rate: { label: "Pass TD %", percent: true },
+  interception_rate: { label: "INT %", percent: true },
+  yards_per_carry: { label: "Yds/carry" },
+  rush_td_rate: { label: "Rush TD %", percent: true },
+  catch_rate: { label: "Catch %", percent: true },
+  yards_per_target: { label: "Yds/target" },
+  rec_td_rate: { label: "Rec TD %", percent: true },
+  fumble_rate: { label: "Fum/touch %", percent: true },
+};
+
+const RATES_BY_POSITION = {
+  QB: ["completion_rate", "yards_per_attempt", "pass_td_rate", "interception_rate",
+       "yards_per_carry", "rush_td_rate", "fumble_rate"],
+  RB: ["yards_per_carry", "rush_td_rate", "catch_rate", "yards_per_target",
+       "rec_td_rate", "fumble_rate"],
+  WR: ["catch_rate", "yards_per_target", "rec_td_rate", "yards_per_carry",
+       "rush_td_rate", "fumble_rate"],
+};
+RATES_BY_POSITION.TE = RATES_BY_POSITION.WR;
+RATES_BY_POSITION.FB = RATES_BY_POSITION.RB;
 
 const SHARE_FIELDS = [
   { key: "pass", volume: "pass_attempts", label: "Att" },
@@ -55,6 +86,8 @@ const app = {
     allocation: { key: "last", direction: "desc" },
     board: { key: "pts", direction: "desc" },
   },
+  // Player ids whose rate panel is open. View state, not saved.
+  expanded: new Set(),
 };
 
 // -- helpers ---------------------------------------------------------------
@@ -250,7 +283,7 @@ function allocationRows() {
         player: entry.player,
         position: entry.position,
         last: baselinePoints(entry, app.format),
-        games: result?.games ?? 17,
+        games: allocation.games ?? result?.games ?? 17,
         share_pass: allocation.shares?.pass ?? 0,
         share_rush: allocation.shares?.rush ?? 0,
         share_recv: allocation.shares?.recv ?? 0,
@@ -294,10 +327,17 @@ function allocationRowMarkup(row) {
     <tr class="${row.estimated ? "is-estimated" : ""}">
       <td class="sticky-col">
         <span class="player-name">${entry.player}</span>${tags.join("")}
+        <button class="rates-toggle" data-rates="${entry.player_id}"
+                title="Efficiency rates" aria-expanded="${app.expanded.has(entry.player_id)}"
+        >${app.expanded.has(entry.player_id) ? "\u2212" : "+"} rates</button>
       </td>
       <td>${entry.position}</td>
       <td>${lastYear}</td>
-      <td class="num">${result?.games ?? 17}</td>
+      <td class="num">
+        <input class="games-input" type="number" min="1" max="17" step="1"
+               data-player="${entry.player_id}" data-games
+               value="${allocation.games ?? 17}" />
+      </td>
       ${shareInputs}
       <td class="num">${stats ? round(stats.pass_attempts) : "—"}</td>
       <td class="num">${stats ? round(stats.carries) : "—"}</td>
@@ -306,6 +346,52 @@ function allocationRowMarkup(row) {
       <td class="num">${stats ? round(row.td, 1) : "—"}</td>
       <td class="num">${result ? round(row.pts, 1) : "—"}</td>
       <td class="num">${result ? round(row.ppg, 1) : "—"}</td>
+    </tr>`;
+}
+
+/**
+ * The rate panel under a player.
+ *
+ * Every input is pre-filled with the rate the projection is actually using, so
+ * an override starts from the model's answer rather than from an empty box.
+ * Clearing one hands the rate back to the model.
+ */
+function ratesRowMarkup(row) {
+  const { entry, allocation } = row;
+  if (!app.expanded.has(entry.player_id)) return "";
+
+  const overrides = allocation.rates || {};
+  const rates = effectiveRates(entry, app.baseline.league_rates, overrides);
+  const sources = rateSources(entry, app.baseline.league_rates, overrides);
+  const names = RATES_BY_POSITION[entry.position] || [];
+
+  const fields = names
+    .map((name) => {
+      const spec = RATE_FIELDS[name];
+      const shown = spec.percent ? rates[name] * 100 : rates[name];
+      const overridden = sources[name] === "override";
+      return `
+        <div class="rate-field">
+          <label for="rate-${entry.player_id}-${name}">${spec.label}</label>
+          <input id="rate-${entry.player_id}-${name}"
+                 class="${overridden ? "is-override" : ""}"
+                 type="number" step="${spec.percent ? "0.1" : "0.05"}" min="0"
+                 data-player="${entry.player_id}" data-rate="${name}"
+                 data-percent="${spec.percent ? "1" : ""}"
+                 value="${shown.toFixed(spec.percent ? 1 : 2)}" />
+        </div>`;
+    })
+    .join("");
+
+  return `
+    <tr class="rates-row">
+      <td colspan="14">
+        <div class="rates-grid">${fields}</div>
+        <p class="rates-note">
+          Pre-filled with what the projection is using. Clear a box to hand that
+          rate back to the model.
+        </p>
+      </td>
     </tr>`;
 }
 
@@ -319,11 +405,14 @@ function renderAllocation() {
   );
 
   $("allocation-body").innerHTML =
-    sorted.map(allocationRowMarkup).join("") ||
+    sorted.map((row) => allocationRowMarkup(row) + ratesRowMarkup(row)).join("") ||
     '<tr><td colspan="14" class="empty">No skill players on this roster.</td></tr>';
 
   renderAllocationFoot(projection, working);
   bindShareInputs();
+  bindGamesInputs();
+  bindRateInputs();
+  bindRateToggles();
   markSortedHeader("allocation-head", app.sort.allocation);
 
   const unassigned = SHARE_FIELDS.filter(
@@ -401,6 +490,64 @@ function renderAllocationFoot(projection, working) {
     </tr>`;
 }
 
+/** Make sure a player has an allocation to write into before writing to it. */
+function allocationFor(playerId) {
+  const working = commitTeam();
+  if (!working.allocations[playerId]) {
+    working.allocations[playerId] = { shares: { pass: 0, rush: 0, recv: 0 }, rates: {} };
+  }
+  return working.allocations[playerId];
+}
+
+function bindGamesInputs() {
+  for (const input of $("allocation-body").querySelectorAll("input[data-games]")) {
+    input.addEventListener("input", (event) => {
+      const value = Number(event.target.value);
+      const allocation = allocationFor(event.target.dataset.player);
+      // Out of range means the box is mid-edit, not that the answer is zero.
+      if (Number.isFinite(value) && value > 0 && value <= 17) {
+        allocation.games = Math.round(value);
+        touched();
+        repaintDerived();
+      }
+    });
+  }
+}
+
+function bindRateInputs() {
+  for (const input of $("allocation-body").querySelectorAll("input[data-rate]")) {
+    input.addEventListener("input", (event) => {
+      const { player, rate, percent } = event.target.dataset;
+      const allocation = allocationFor(player);
+      allocation.rates = allocation.rates || {};
+      const raw = event.target.value.trim();
+      if (raw === "") {
+        // An empty box is not a rate of zero — it is "you decide".
+        delete allocation.rates[rate];
+        event.target.classList.remove("is-override");
+      } else {
+        const value = Number(raw);
+        if (!Number.isFinite(value) || value < 0) return;
+        allocation.rates[rate] = percent ? value / 100 : value;
+        event.target.classList.add("is-override");
+      }
+      touched();
+      repaintDerived();
+    });
+  }
+}
+
+function bindRateToggles() {
+  for (const button of $("allocation-body").querySelectorAll("button[data-rates]")) {
+    button.addEventListener("click", () => {
+      const id = button.dataset.rates;
+      if (app.expanded.has(id)) app.expanded.delete(id);
+      else app.expanded.add(id);
+      renderAllocation();
+    });
+  }
+}
+
 function bindShareInputs() {
   for (const input of $("allocation-body").querySelectorAll("input[data-share]")) {
     input.addEventListener("input", (event) => {
@@ -426,6 +573,7 @@ function repaintDerived() {
   const rows = $("allocation-body").querySelectorAll("tr");
 
   for (const row of rows) {
+    if (row.classList.contains("rates-row")) continue;
     const input = row.querySelector("input[data-share]");
     if (!input) continue;
     const result = projected.get(input.dataset.player);
@@ -552,6 +700,76 @@ function buildPayload() {
   };
 }
 
+function formatWhen(value) {
+  const when = new Date(value);
+  return Number.isNaN(when.getTime()) ? String(value) : when.toLocaleString();
+}
+
+async function openSaves() {
+  const dialog = $("saves-dialog");
+  $("saves-list").innerHTML = "";
+  $("saves-hint").textContent = "Loading…";
+  dialog.showModal();
+
+  const auth = authStatus();
+  if (auth.required && !auth.signedIn) {
+    $("saves-hint").textContent =
+      "Sign in with Google to reach your saved projections.";
+    return;
+  }
+
+  const saves = await listSaves();
+  if (!saves.length) {
+    $("saves-hint").textContent =
+      "Nothing saved yet. Save to BigQuery and it will show up here.";
+    return;
+  }
+
+  $("saves-hint").textContent =
+    "Loading a save replaces what is in this browser now.";
+  $("saves-list").innerHTML = saves
+    .map(
+      (save) => `
+        <li>
+          <span>
+            <span class="save-when">${save.label || formatWhen(save.saved_at)}</span><br />
+            <span class="save-meta">${save.players} players · ${save.teams} team${save.teams === 1 ? "" : "s"} · ${formatWhen(save.saved_at)}</span>
+          </span>
+          <button class="btn btn-ghost" data-load="${save.save_id}">Load</button>
+        </li>`,
+    )
+    .join("");
+
+  for (const button of $("saves-list").querySelectorAll("button[data-load]")) {
+    button.addEventListener("click", () => loadSave(button.dataset.load));
+  }
+}
+
+async function loadSave(saveId) {
+  const result = await loadRemote(saveId);
+  if (!result.ok) {
+    $("saves-hint").textContent = result.error;
+    return;
+  }
+  const restored = stateFromRows(result.rows);
+  const teams = Object.keys(restored.teams);
+  if (!teams.length) {
+    $("saves-hint").textContent = "That save had no players in it.";
+    return;
+  }
+
+  app.state = restored;
+  app.expanded.clear();
+  saveLocal(app.state);
+  if (!app.baseline.teams[app.team]) app.team = teams[0];
+  $("team-select").value = app.team;
+  $("saves-dialog").close();
+  renderTeamView();
+  if (app.view === "board") renderBoard();
+  banner(`Loaded ${teams.length} team(s) from BigQuery.`, "good");
+  setSaveState("Restored from a save");
+}
+
 async function save() {
   const payload = buildPayload();
   if (!payload.teams.length) {
@@ -656,10 +874,21 @@ async function boot() {
     renderAllocation();
   });
   $("reset-team").addEventListener("click", () => {
+    // Only worth asking about when there is something to lose — resetting a
+    // team you have not touched changes nothing.
+    const touchedTeam = Boolean(app.state.teams[app.team]);
+    if (
+      touchedTeam &&
+      !window.confirm(`Discard your ${app.team} projection and start from 2025 again?`)
+    ) {
+      return;
+    }
     delete app.state.teams[app.team];
+    app.expanded.clear();
     touched();
     renderTeamView();
   });
+  $("load-btn").addEventListener("click", openSaves);
   $("board-format").addEventListener("change", renderBoard);
   $("board-position").addEventListener("change", renderBoard);
   $("save-btn").addEventListener("click", save);

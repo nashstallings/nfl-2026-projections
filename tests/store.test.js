@@ -10,7 +10,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { isStaleToken } from "../web/js/store.js";
+import { isStaleToken, stateFromRows } from "../web/js/store.js";
 
 describe("isStaleToken", () => {
   test("an expired token is worth refreshing for", () => {
@@ -45,5 +45,49 @@ describe("isStaleToken", () => {
   test("a 401 with no detail is treated as final rather than retried forever", () => {
     assert.equal(isStaleToken(401, ""), false);
     assert.equal(isStaleToken(401, undefined), false);
+  });
+});
+
+describe("stateFromRows", () => {
+  const row = {
+    team: "MIN", player_id: "1", games: 17,
+    share_pass: 0.9, share_rush: 0.1, share_recv: 0,
+    team_pass_attempts: 550, team_carries: 420, team_targets: 500,
+  };
+
+  test("a save restores the team volume and each player's shares", () => {
+    const state = stateFromRows([row]);
+    assert.deepEqual(state.teams.MIN.volume, {
+      pass_attempts: 550, carries: 420, targets: 500,
+    });
+    assert.deepEqual(state.teams.MIN.allocations["1"].shares, {
+      pass: 0.9, rush: 0.1, recv: 0,
+    });
+  });
+
+  test("games are restored when they were not the default", () => {
+    const state = stateFromRows([{ ...row, games: 13 }]);
+    assert.equal(state.teams.MIN.allocations["1"].games, 13);
+  });
+
+  test("several teams in one save come back separately", () => {
+    const state = stateFromRows([row, { ...row, team: "PHI", player_id: "2" }]);
+    assert.deepEqual(Object.keys(state.teams).sort(), ["MIN", "PHI"]);
+  });
+
+  test("a malformed row is skipped, not fatal to the rest of the save", () => {
+    const state = stateFromRows([{ team: "MIN" }, row, null, { player_id: "x" }]);
+    assert.equal(Object.keys(state.teams.MIN.allocations).length, 1);
+  });
+
+  test("an empty save produces empty state rather than throwing", () => {
+    assert.deepEqual(stateFromRows([]), { teams: {} });
+    assert.deepEqual(stateFromRows(null), { teams: {} });
+  });
+
+  test("missing numbers become zero rather than NaN", () => {
+    const state = stateFromRows([{ team: "MIN", player_id: "1" }]);
+    assert.equal(state.teams.MIN.volume.carries, 0);
+    assert.equal(state.teams.MIN.allocations["1"].shares.rush, 0);
   });
 });

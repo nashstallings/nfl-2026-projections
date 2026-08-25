@@ -23,6 +23,7 @@
         <span class="save-state" id="save-state">Saved locally</span>
         <span class="identity" id="identity" hidden></span>
         <div id="signin-button"></div>
+        <button class="btn btn-ghost" id="load-btn" title="Reopen a projection saved to BigQuery">Load</button>
         <button class="btn btn-ghost" id="export-btn" title="Download as JSON">Export</button>
         <button class="btn btn-primary" id="save-btn">Save to BigQuery</button>
       </div>
@@ -68,7 +69,8 @@
                   <th class="sticky-col sortable" data-sort="player" data-type="text">Player</th>
                   <th class="sortable" data-sort="position" data-type="text">Pos</th>
                   <th class="sortable" data-sort="last">2025</th>
-                  <th class="num sortable" data-sort="games">G</th>
+                  <th class="num sortable" data-sort="games"
+                      title="Games played. Divides the season total into a per-game figure; it does not reduce the volume, because the shares below are shares of the whole season.">G</th>
                   <th class="num sortable" data-sort="share_pass">Att %</th>
                   <th class="num sortable" data-sort="share_rush">Car %</th>
                   <th class="num sortable" data-sort="share_recv">Tgt %</th>
@@ -136,6 +138,15 @@
         </section>
       </section>
     </main>
+
+    <dialog id="saves-dialog">
+      <form method="dialog" class="dialog-head">
+        <h2>Saved projections</h2>
+        <button class="btn btn-ghost" value="cancel">Close</button>
+      </form>
+      <p class="hint" id="saves-hint">Loading…</p>
+      <ul class="saves-list" id="saves-list"></ul>
+    </dialog>
 
     <script type="module" src="/js/app.js"></script>
   </body>

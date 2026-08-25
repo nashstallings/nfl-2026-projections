@@ -365,3 +365,84 @@ tfoot .exact { color: var(--good); }
 /* Google renders its own button here; it only needs somewhere to sit, and to
    disappear entirely when sign-in is not configured. */
 #signin-button:empty { display: none; }
+
+/* -- saved projections dialog ------------------------------------------- */
+
+#saves-dialog {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink);
+  padding: 0;
+  max-width: 30rem;
+  width: calc(100vw - 3rem);
+  box-shadow: 0 20px 60px -20px rgba(0, 0, 0, .4);
+}
+
+#saves-dialog::backdrop { background: rgba(10, 12, 16, .45); }
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 14px 16px 10px;
+}
+
+.dialog-head h2 { font-size: 14px; font-weight: 650; margin: 0; }
+#saves-dialog .hint { padding: 0 16px; margin: 0 0 10px; }
+
+.saves-list { list-style: none; margin: 0; padding: 0 16px 16px; }
+
+.saves-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.saves-list .save-when { color: var(--ink); }
+.saves-list .save-meta { color: var(--ink-faint); font-size: 11.5px; }
+
+/* -- per-player detail (rate overrides) --------------------------------- */
+
+.rates-toggle {
+  background: none;
+  border: 0;
+  padding: 0 4px;
+  margin-left: 4px;
+  color: var(--ink-faint);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.rates-toggle:hover { color: var(--accent); }
+.rates-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+tr.rates-row > td { background: var(--bg); padding: 10px 14px 12px; }
+
+.rates-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px 14px;
+}
+
+.rate-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rate-field label { font-size: 11.5px; color: var(--ink-soft); }
+.rate-field input { width: 76px; font-family: var(--mono); font-size: 12.5px; padding: 2px 5px; text-align: right; }
+/* An overridden rate should be visibly yours rather than the model's. */
+.rate-field input.is-override { border-color: var(--accent); color: var(--accent); }
+.rates-note { margin: 8px 0 0; font-size: 11.5px; color: var(--ink-faint); }
+
+.games-input {
+  width: 44px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  padding: 2px 4px;
+  text-align: right;
+}

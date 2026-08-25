@@ -144,3 +144,61 @@ export function downloadJson(payload, filename) {
   link.remove();
   URL.revokeObjectURL(url);
 }
+
+/**
+ * Rebuild working state from the rows of a saved projection.
+ *
+ * The table stores what you decided — the team volume and each player's shares —
+ * beside what it produced, so a save is enough to put you back where you were
+ * without consulting the baseline. That is the point of storing the inputs:
+ * a projection you cannot reopen is a backup, not an archive.
+ *
+ * Rows are external data. A malformed one is skipped rather than allowed to
+ * abort the load and lose the rest of the save with it.
+ */
+export function stateFromRows(rows) {
+  const teams = {};
+  for (const row of rows || []) {
+    const code = row?.team;
+    const playerId = row?.player_id;
+    if (!code || !playerId) continue;
+
+    if (!teams[code]) {
+      teams[code] = {
+        volume: {
+          pass_attempts: Number(row.team_pass_attempts) || 0,
+          carries: Number(row.team_carries) || 0,
+          targets: Number(row.team_targets) || 0,
+        },
+        allocations: {},
+      };
+    }
+    teams[code].allocations[playerId] = {
+      shares: {
+        pass: Number(row.share_pass) || 0,
+        rush: Number(row.share_rush) || 0,
+        recv: Number(row.share_recv) || 0,
+      },
+      rates: {},
+      ...(Number(row.games) ? { games: Number(row.games) } : {}),
+    };
+  }
+  return { teams };
+}
+
+/** Fetch one saved projection's rows, defaulting to the most recent. */
+export async function loadRemote(saveId) {
+  try {
+    const url = saveId
+      ? `/api/projections/latest?save_id=${encodeURIComponent(saveId)}`
+      : "/api/projections/latest";
+    const response = await fetch(url, { headers: authHeader() });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return { ok: false, error: body.detail || `load failed (${response.status})` };
+    }
+    return { ok: true, rows: body.rows || [] };
+  } catch {
+    return { ok: false, error: "could not reach the server" };
+  }
+}
