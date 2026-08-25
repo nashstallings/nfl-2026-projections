@@ -61,6 +61,13 @@ gcloud projects add-iam-policy-binding "${PROJECT}" \
   --role="roles/bigquery.jobUser" \
   --condition=None --quiet >/dev/null
 
+# bootstrap.sh has to have run first; without the dataset the grant below reads
+# an empty policy and the deploy succeeds into a service that cannot write.
+if ! bq --project_id="${PROJECT}" show --dataset "${PROJECT}:${DATASET}" >/dev/null 2>&1; then
+  echo "dataset ${PROJECT}:${DATASET} does not exist — run ./infra/bootstrap.sh first" >&2
+  exit 1
+fi
+
 TMP_POLICY="$(mktemp)"
 trap 'rm -f "${TMP_POLICY}"' EXIT
 bq --project_id="${PROJECT}" show --format=prettyjson "${PROJECT}:${DATASET}" > "${TMP_POLICY}"

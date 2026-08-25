@@ -48,6 +48,9 @@ Push to `main` and it deploys. The workflow stays inert until the first two
 variables exist, so pushes will not fail before setup. `infra/deploy.sh` does
 the same thing by hand if you would rather not wait for Actions.
 
+[`docs/DEPLOYING.md`](docs/DEPLOYING.md) walks through all of it step by step,
+including the two things most likely to go wrong.
+
 **Add the Cloud Run URL to the OAuth client's Authorised JavaScript origins**,
 or Google refuses the sign-in before it ever reaches the service.
 
