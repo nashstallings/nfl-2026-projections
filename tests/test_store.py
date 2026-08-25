@@ -7,6 +7,7 @@ up in the wrong column, or a save silently writes zero rows.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -103,3 +104,40 @@ class TestFlatten:
     def test_an_overlong_label_is_truncated(self):
         (row,) = flatten(payload(label="x" * 500))
         assert len(row["label"]) == 200
+
+
+class TestBaselineRewriteGuard:
+    """A rebuild that changes nothing must not rewrite the file.
+
+    Pushing data/ redeploys the service, so a timestamp-only diff buys a full
+    Cloud Run rebuild for no new data.
+    """
+
+    def _baseline(self, **overrides):
+        base = {"generated_at": "2026-08-25T00:00:00+00:00", "teams": {"MIN": {"roster": []}}}
+        base.update(overrides)
+        return base
+
+    def test_identical_data_is_not_a_change(self, tmp_path):
+        from projections.build_baseline import _changed
+
+        path = tmp_path / "baseline.json"
+        path.write_text(json.dumps(self._baseline()), encoding="utf-8")
+        later = self._baseline(generated_at="2026-08-26T12:00:00+00:00")
+        assert _changed(path, later) is False
+
+    def test_different_rosters_are_a_change(self, tmp_path):
+        from projections.build_baseline import _changed
+
+        path = tmp_path / "baseline.json"
+        path.write_text(json.dumps(self._baseline()), encoding="utf-8")
+        moved = self._baseline(teams={"MIN": {"roster": [{"player_id": "1"}]}})
+        assert _changed(path, moved) is True
+
+    def test_an_unreadable_file_counts_as_changed(self, tmp_path):
+        """Rewriting is the repair, so a corrupt file must not be left in place."""
+        from projections.build_baseline import _changed
+
+        path = tmp_path / "baseline.json"
+        path.write_text("{ not json", encoding="utf-8")
+        assert _changed(path, self._baseline()) is True

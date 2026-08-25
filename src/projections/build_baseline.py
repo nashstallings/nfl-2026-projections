@@ -426,10 +426,22 @@ def main(argv: list[str] | None = None) -> int:
         projection_season=args.projection_season,
         cache_dir=args.cache_dir,
     )
+    rostered = sum(len(team["roster"]) for team in baseline["teams"].values())
+
+    # Rosters change in bursts — a cutdown, a trade — and are static in between.
+    # Rewriting an identical file would change only the timestamp, and since a
+    # push of data/ redeploys the service, that is a full rebuild bought for
+    # nothing. Say so and leave the file alone.
+    if args.out.exists() and not _changed(args.out, baseline):
+        logger.info(
+            "%s is already current — %s roster spots, nothing to rebuild",
+            args.out,
+            rostered,
+        )
+        return 0
+
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(baseline, separators=(",", ":")), encoding="utf-8")
-
-    rostered = sum(len(team["roster"]) for team in baseline["teams"].values())
     logger.info(
         "wrote %s — %s teams, %s roster spots for %s",
         args.out,
@@ -438,6 +450,20 @@ def main(argv: list[str] | None = None) -> int:
         args.projection_season,
     )
     return 0
+
+
+def _changed(path: Path, baseline: dict[str, Any]) -> bool:
+    """Whether a rebuild differs from what is on disk, ignoring the timestamp.
+
+    A corrupt or unreadable file counts as changed: rewriting it is the repair.
+    """
+    try:
+        existing = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True
+    return {k: v for k, v in existing.items() if k != "generated_at"} != {
+        k: v for k, v in baseline.items() if k != "generated_at"
+    }
 
 
 if __name__ == "__main__":
