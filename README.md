@@ -18,12 +18,21 @@ share of it, and let the arithmetic produce the points. That is what this does.
 
 ```bash
 pip install -r requirements.txt
-python -m projections.build_baseline     # fetch nflverse, write data/baseline.json
-python -m projections.server             # http://127.0.0.1:8000
+pip install -e .                 # the package lives in src/, so it needs installing
+python -m projections.server     # http://127.0.0.1:8000
 ```
 
-That is the whole setup. The baseline build needs no credentials, the server
-binds to loopback, and your work saves to the browser as you type.
+That is the whole setup. `data/baseline.json` is committed, so there is nothing
+to fetch on a first run; the server binds to loopback, and your work saves to
+the browser as you type.
+
+To rebuild the baseline against newer rosters:
+
+```bash
+python -m projections.build_baseline
+```
+
+No credentials needed for that — it reads nflverse's public releases.
 
 ## Using it
 
@@ -140,9 +149,10 @@ whichever team a player finished on misstates both.
 ## Checks
 
 ```bash
+pip install -r requirements-dev.txt
 ruff check .
 node --test 'tests/**/*.test.js'   # the projection model
-pytest -q              # the server and the row shape
+pytest -q                          # the server and the row shape
 ```
 
 ## Data
