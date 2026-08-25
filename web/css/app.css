@@ -182,6 +182,69 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: -1
 .volume-card label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-faint); margin-bottom: 6px; }
 .volume-card input { width: 100%; font-family: var(--mono); font-size: 16px; }
 .volume-card .meta { margin-top: 7px; font-size: 11.5px; color: var(--ink-soft); display: flex; justify-content: space-between; gap: 8px; }
+
+/* Where this number sits against the other 31 offences. Not a chart — one value
+   in one distribution — so it gets a rule, three ticks and a marker rather than
+   axes. The track stays recessive; only the marker takes the accent. */
+.scale { margin-top: 11px; }
+
+.scale-track {
+  position: relative;
+  height: 3px;
+  background: var(--line);
+  border-radius: 99px;
+}
+
+.scale-median {
+  position: absolute;
+  top: -3px;
+  width: 1px;
+  height: 9px;
+  background: var(--line-strong);
+  transform: translateX(-0.5px);
+}
+
+.scale-marker {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  /* A ring in the surface colour keeps the marker legible where it lands on
+     the median tick. */
+  box-shadow: 0 0 0 2px var(--panel);
+  transform: translate(-50%, -50%);
+}
+
+.scale-labels {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  margin-top: 7px;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Pinned to the tick's real position rather than centred by the flex row. The
+   median is rarely the midpoint of the range, and a label that says otherwise
+   misreads the distribution it is describing. */
+.scale-labels .mid {
+  position: absolute;
+  transform: translateX(-50%);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.scale-rank {
+  margin-top: 5px;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.scale-rank b { color: var(--ink); font-weight: 600; }
 .volume-card .delta.up { color: var(--good); }
 .volume-card .delta.down { color: var(--bad); }
 

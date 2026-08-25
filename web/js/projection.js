@@ -292,3 +292,59 @@ export function positionalRanks(projections, format = "ppr") {
   }
   return ranks;
 }
+
+/**
+ * What the rest of the league did with this volume last season.
+ *
+ * A team's own number means nothing on its own — 484 pass attempts is either a
+ * lot or a little depending on the year and the league. The distribution is what
+ * turns it into a judgement, and it is already in the baseline: every team's
+ * 2025 totals are there, so nothing needs fetching to work it out.
+ *
+ * Median rather than mean, because one extreme offense should not drag the
+ * middle of the league somewhere no team actually sits.
+ */
+export function leagueRange(teams, stat) {
+  const values = Object.values(teams || {})
+    .map((team) => Number(team?.totals_2025?.[stat]) || 0)
+    .filter((value) => value > 0)
+    .sort((a, b) => a - b);
+
+  if (!values.length) return { min: 0, median: 0, max: 0, count: 0 };
+
+  const middle = Math.floor(values.length / 2);
+  const median =
+    values.length % 2 ? values[middle] : (values[middle - 1] + values[middle]) / 2;
+
+  return { min: values[0], median, max: values[values.length - 1], count: values.length };
+}
+
+/**
+ * Where a number would have placed last season. 1 is the most in the league.
+ *
+ * Ranks the value you are *considering*, not the value the team recorded, so
+ * typing 560 targets answers "that would have been third in the league" while
+ * you are still deciding.
+ */
+export function rankInLeague(teams, stat, value) {
+  const values = Object.values(teams || {})
+    .map((team) => Number(team?.totals_2025?.[stat]) || 0)
+    .filter((entry) => entry > 0);
+  if (!values.length) return null;
+  const ahead = values.filter((entry) => entry > value).length;
+  // Capped at the size of the field: a number below every team in the league is
+  // last, not one place past last. "33rd of 32" reads as a bug.
+  return { rank: Math.min(ahead + 1, values.length), of: values.length };
+}
+
+/**
+ * A value's position along the league range, as 0-1.
+ *
+ * Clamped, because a projection is allowed to sit outside anything that happened
+ * last season — the marker pins to the end of the scale and the number beside it
+ * still tells the truth.
+ */
+export function positionInRange(value, { min, max }) {
+  if (!(max > min)) return 0;
+  return Math.min(1, Math.max(0, (value - min) / (max - min)));
+}

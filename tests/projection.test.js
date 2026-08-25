@@ -13,6 +13,9 @@ import assert from "node:assert/strict";
 import {
   PROJECTED_POSITIONS,
   defaultShares,
+  leagueRange,
+  positionInRange,
+  rankInLeague,
   effectiveRates,
   fantasyPoints,
   positionalRanks,
@@ -391,5 +394,75 @@ describe("positionalRanks", () => {
     ];
     assert.equal(positionalRanks(projections, "std").get("runner"), 1);
     assert.equal(positionalRanks(projections, "ppr").get("catcher"), 1);
+  });
+});
+
+describe("league context", () => {
+  const teams = {
+    A: { totals_2025: { carries: 300 } },
+    B: { totals_2025: { carries: 400 } },
+    C: { totals_2025: { carries: 500 } },
+    D: { totals_2025: { carries: 600 } },
+  };
+
+  test("the range spans the league", () => {
+    const range = leagueRange(teams, "carries");
+    assert.equal(range.min, 300);
+    assert.equal(range.max, 600);
+    assert.equal(range.count, 4);
+  });
+
+  test("an even league median is the midpoint of the middle two", () => {
+    assert.equal(leagueRange(teams, "carries").median, 450);
+  });
+
+  test("an odd league median is the middle value", () => {
+    const odd = { A: teams.A, B: teams.B, C: teams.C };
+    assert.equal(leagueRange(odd, "carries").median, 400);
+  });
+
+  test("teams with no volume in a category are left out", () => {
+    const withZero = { ...teams, E: { totals_2025: { carries: 0 } } };
+    assert.equal(leagueRange(withZero, "carries").count, 4);
+  });
+
+  test("an unknown stat degrades to zeroes rather than NaN", () => {
+    const range = leagueRange(teams, "field_goals");
+    assert.deepEqual(range, { min: 0, median: 0, max: 0, count: 0 });
+  });
+
+  test("the highest value ranks first", () => {
+    assert.deepEqual(rankInLeague(teams, "carries", 600), { rank: 1, of: 4 });
+  });
+
+  test("ranking is of the value being considered, not one already recorded", () => {
+    // 550 is nobody's actual total; it would still have placed second.
+    assert.deepEqual(rankInLeague(teams, "carries", 550), { rank: 2, of: 4 });
+  });
+
+  test("a value past the league best still ranks first", () => {
+    assert.equal(rankInLeague(teams, "carries", 9999).rank, 1);
+  });
+
+  test("a value below every team ranks last, not past last", () => {
+    // Uncapped this reads "5th of 4", which looks like a bug rather than a floor.
+    assert.deepEqual(rankInLeague(teams, "carries", 1), { rank: 4, of: 4 });
+  });
+
+  test("position maps the ends of the range to 0 and 1", () => {
+    const range = leagueRange(teams, "carries");
+    assert.equal(positionInRange(300, range), 0);
+    assert.equal(positionInRange(600, range), 1);
+    assert.equal(positionInRange(450, range), 0.5);
+  });
+
+  test("position clamps outside the range rather than overflowing the track", () => {
+    const range = leagueRange(teams, "carries");
+    assert.equal(positionInRange(50, range), 0);
+    assert.equal(positionInRange(5000, range), 1);
+  });
+
+  test("a degenerate range does not divide by zero", () => {
+    assert.equal(positionInRange(5, { min: 10, max: 10 }), 0);
   });
 });

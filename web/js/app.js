@@ -10,6 +10,9 @@
 import {
   PROJECTED_POSITIONS,
   effectiveRates,
+  leagueRange,
+  positionInRange,
+  rankInLeague,
   positionalRanks,
   projectTeam,
   rateSources,
@@ -118,6 +121,40 @@ function touched() {
 
 // -- team view -------------------------------------------------------------
 
+/**
+ * The league scale under a volume box.
+ *
+ * Answers the question the number cannot answer alone: is 484 pass attempts a
+ * lot? The marker is the value currently in the box, so it moves as you type.
+ */
+function scaleMarkup(field, value) {
+  const range = leagueRange(app.baseline.teams, field.key);
+  if (!range.count) return "";
+  const placed = rankInLeague(app.baseline.teams, field.key, value);
+  const left = (fraction) => `${(fraction * 100).toFixed(1)}%`;
+  return `
+    <div class="scale">
+      <div class="scale-track">
+        <span class="scale-median" style="left:${left(positionInRange(range.median, range))}"></span>
+        <span class="scale-marker" style="left:${left(positionInRange(value, range))}"></span>
+      </div>
+      <div class="scale-labels">
+        <span>${Math.round(range.min)}</span>
+        <span class="mid" style="left:${left(positionInRange(range.median, range))}">med ${Math.round(range.median)}</span>
+        <span>${Math.round(range.max)}</span>
+      </div>
+      <div class="scale-rank">
+        would rank <b>${ordinal(placed.rank)}</b> of ${placed.of} in 2025
+      </div>
+    </div>`;
+}
+
+function ordinal(n) {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th`;
+  return `${n}${["th", "st", "nd", "rd"][n % 10] || "th"}`;
+}
+
 function renderVolume() {
   const team = app.baseline.teams[app.team];
   const working = teamState(app.team);
@@ -137,6 +174,7 @@ function renderVolume() {
           <span>2025: ${last}${delta ? ` <span class="delta ${direction}">${sign}${delta}</span>` : ""}</span>
           <span title="Volume whose 2025 producer is no longer on the roster">${vacated} vacated</span>
         </div>
+        ${scaleMarkup(field, value)}
       </div>`;
   }).join("");
 
@@ -164,6 +202,13 @@ function renderVolumeMeta() {
     const sign = delta > 0 ? "+" : "";
     card.querySelector(".meta span").innerHTML =
       `2025: ${last}${delta ? ` <span class="delta ${direction}">${sign}${delta}</span>` : ""}`;
+
+    // Replacing the scale wholesale is safe — it holds no focusable element, so
+    // the cursor stays in the box being typed into.
+    const scale = card.querySelector(".scale");
+    if (scale) {
+      scale.outerHTML = scaleMarkup(field, working.volume[field.key] || 0);
+    }
   }
 }
 
