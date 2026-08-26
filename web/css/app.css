@@ -1,6 +1,7 @@
 /* One screen, dense, meant to be lived in for an evening. Type sizes stay small
    and the palette stays quiet so the only things that catch the eye are the
-   numbers that need attention: unallocated volume, and players with no history. */
+   numbers that need attention: the points a projection produces, and volume
+   that is over or under the team total it has to come out of. */
 
 :root {
   --bg: #f7f8fa;
@@ -41,6 +42,11 @@
 }
 
 * { box-sizing: border-box; }
+
+/* The `hidden` attribute is how everything on this page is shown and hidden,
+   and a UA rule loses to any class that sets `display` — which is how the intro
+   bar stayed on screen after being dismissed. This makes the attribute win. */
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -115,7 +121,7 @@ h1 {
 .btn-primary:disabled { opacity: 0.5; cursor: default; filter: none; }
 .btn-ghost { background: transparent; }
 
-/* -- banner ------------------------------------------------------------- */
+/* -- banner and first-run note ------------------------------------------ */
 
 .banner {
   padding: 9px 20px;
@@ -127,6 +133,22 @@ h1 {
 
 .banner.is-error { background: var(--bad-soft); color: var(--bad); }
 .banner.is-good { background: var(--accent-soft); color: var(--accent); }
+
+/* Says where to start. Dismissed for good on the first "Got it", because it is
+   an orientation, not a warning. */
+.intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 10px 20px;
+  font-size: 13px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+
+.intro b { font-weight: 650; }
 
 /* -- layout ------------------------------------------------------------- */
 
@@ -142,6 +164,8 @@ main { padding: 18px 20px 60px; max-width: 1500px; margin: 0 auto; }
 
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field > span { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-faint); }
+
+.tuned-count { font-size: 12px; color: var(--ink-faint); padding-bottom: 6px; }
 
 select, input[type="number"] {
   font: inherit;
@@ -164,6 +188,7 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: -1
 
 .panel h2 { font-size: 13px; font-weight: 650; margin: 0 0 4px; }
 .hint { font-size: 12px; color: var(--ink-soft); margin: 0 0 12px; }
+.table-note { font-size: 11.5px; color: var(--ink-faint); margin: 10px 0 0; }
 
 /* -- volume editor ------------------------------------------------------ */
 
@@ -261,7 +286,8 @@ table.grid th {
   letter-spacing: 0.04em;
   color: var(--ink-faint);
   font-weight: 600;
-  padding: 6px 8px;
+  padding: 5px 8px;
+  line-height: 16px;
   border-bottom: 1px solid var(--line-strong);
   white-space: nowrap;
   position: sticky;
@@ -283,8 +309,74 @@ table.grid tbody tr:hover { background: var(--bg); }
 
 td.num { font-family: var(--mono); font-size: 12.5px; }
 .sticky-col { width: auto; min-width: 190px; }
-
 .sticky-col { position: sticky; left: 0; background: var(--panel); z-index: 1; }
+
+/* -- banded headers ------------------------------------------------------ */
+
+/* Three stacked header rows, each pinned under the one above it: the bands, the
+   column names, then the running totals. Twelve stat columns read as three
+   decisions when they are banded and as twelve when they are not. The offsets
+   below are those rows' own heights, which is why the heights are stated
+   rather than left to the content. */
+.band-row th {
+  top: 0;
+  height: 20px;
+  padding: 2px 8px;
+  font-size: 10px;
+  border-bottom: 0;
+  color: var(--ink-faint);
+}
+
+.band-row th.band {
+  text-align: center;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.col-row th { top: 20px; height: 26px; }
+
+/* The totals sit under the headers rather than below the last player, so the
+   budget being spent stays in view while it is being spent. */
+.totals-row th,
+.totals-row td {
+  position: sticky;
+  top: 46px;
+  background: var(--panel);
+  border-bottom: 2px solid var(--line-strong);
+  padding: 4px 8px;
+  font-weight: 600;
+  font-size: 12.5px;
+  font-family: var(--mono);
+  z-index: 2;
+}
+
+.totals-row th {
+  font-family: inherit;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  left: 0;
+  z-index: 3;
+}
+
+/* "487" over "161 left" — the budget travels with the number being measured
+   against it, instead of living in a sentence above the table. */
+.totals-row .tot { display: block; line-height: 15px; }
+
+.totals-row .tot-caption {
+  display: block;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 12px;
+  letter-spacing: 0.01em;
+  opacity: 0.85;
+}
+
+.totals-row .over { color: var(--bad); }
+.totals-row .under { color: var(--warn); }
+.totals-row .exact { color: var(--good); }
 
 /* -- sortable headers --------------------------------------------------- */
 
@@ -326,46 +418,50 @@ tbody tr:hover .sticky-col { background: var(--bg); }
 .tag-rookie { background: var(--accent-soft); color: var(--accent); }
 .tag-new { background: var(--warn-soft); color: var(--warn); }
 
-.share-input {
-  width: 62px;
-  font-family: var(--mono);
-  font-size: 12.5px;
-  padding: 2px 5px;
-  text-align: right;
+/* Teams you have made a decision about, marked where you would look for them. */
+.tuned-dot { color: var(--good); font-size: 11px; margin-left: 5px; }
+
+/* -- the answer column --------------------------------------------------- */
+
+/* What the projection says, sitting fourth from the left rather than past the
+   right edge of the scroller. It used to be the last of twenty-one columns:
+   you typed a target count and the number it changed was off screen. */
+th.key-col, td.key-col {
+  font-weight: 650;
+  color: var(--ink);
+  background: var(--accent-soft);
 }
 
-/* A share resting on a league median rather than the player's own history —
-   worth seeing at a glance, since it is the number most likely to be wrong. */
-.is-estimated td.num { color: var(--ink-soft); }
+td.key-col { font-size: 13px; }
+th.key-col { color: var(--accent); }
 
-/* The totals sit under the headers rather than below the last player, so the
-   budget being spent stays in view while it is being spent. */
-.totals-row th,
-.totals-row td {
+/* Frozen beside the player's name, so the answer stays put when the window is
+   narrow enough to scroll — with the history panel open, say. The offset is the
+   name column's measured width, set from JS: the table is auto-laid-out, so
+   that width is whatever the longest name on this roster needs and cannot be
+   asserted here. */
+#allocation-table .key-col {
   position: sticky;
-  top: 25px;
-  background: var(--panel);
-  border-bottom: 2px solid var(--line-strong);
-  padding: 5px 8px;
-  font-weight: 600;
-  font-size: 12.5px;
-  font-family: var(--mono);
-  z-index: 2;
+  left: var(--pin-left, 190px);
 }
 
-.totals-row th {
-  font-family: inherit;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ink-faint);
-  left: 0;
-  z-index: 3;
-}
+/* Stacking, outermost last: body cells, then the totals that pin under the
+   headers, then the headers themselves. */
+#allocation-table tbody .sticky-col,
+#allocation-table tbody .key-col { z-index: 1; }
+.totals-row td { z-index: 2; }
+.totals-row th,
+.totals-row td.key-col { z-index: 3; }
+.band-row th, .col-row th { z-index: 4; }
+.band-row th.sticky-col,
+.col-row th.sticky-col,
+.col-row th.key-col { z-index: 5; }
 
-.totals-row .over { color: var(--bad); }
-.totals-row .under { color: var(--warn); }
-.totals-row .exact { color: var(--good); }
+.delta-cell { color: var(--ink-faint); }
+.delta-cell.up { color: var(--good); }
+.delta-cell.down { color: var(--bad); }
+
+/* -- typed counts and their rates ---------------------------------------- */
 
 /* A typed count is the decision; it should look like a field, not a label. */
 .count-cell {
@@ -376,13 +472,48 @@ tbody tr:hover .sticky-col { background: var(--bg); }
   text-align: right;
 }
 
+/* Spinners cost about a character of width in every one of these cells and are
+   useless here — nobody nudges receiving yards with the arrow keys. */
 .count-cell::-webkit-outer-spin-button,
 .count-cell::-webkit-inner-spin-button { appearance: none; margin: 0; }
 .count-cell { -moz-appearance: textfield; }
 
-/* Calculated, not typed — recessive, so the eye goes to the inputs. */
-td.derived, th.derived { color: var(--ink-faint); background: var(--bg); }
-th.derived { font-style: italic; }
+/* The rate a box produces, printed under the box. As columns of their own they
+   put Y/T three columns away from the receiving yards it divides; here the
+   context arrives with the number it is about. */
+.rate-caption {
+  display: block;
+  margin: 1px 4px 0 0;
+  font-size: 10px;
+  line-height: 12px;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.rate-caption i { font-style: normal; opacity: 0.7; }
+
+/* A column this position never uses. Blank rather than a dash: twelve dashes a
+   row read as content, and the band above already says what a position does. */
+td.na { background: var(--bg); }
+
+/* -- hidden rows --------------------------------------------------------- */
+
+.more-row td { padding: 8px; text-align: center; border-bottom: 1px solid var(--line); }
+
+.link-button {
+  background: none;
+  border: 0;
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.link-button:hover { color: var(--accent); background: var(--accent-soft); }
+.link-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .empty { padding: 30px; text-align: center; color: var(--ink-faint); font-size: 13px; }
 
@@ -442,70 +573,11 @@ th.derived { font-style: italic; }
 .saves-list .save-when { color: var(--ink); }
 .saves-list .save-meta { color: var(--ink-faint); font-size: 11.5px; }
 
-/* -- per-player detail (rate overrides) --------------------------------- */
+/* -- player history ------------------------------------------------------ */
 
-.rates-toggle {
-  background: none;
-  border: 0;
-  padding: 0 4px;
-  margin-left: 4px;
-  color: var(--ink-faint);
-  cursor: pointer;
-  font: inherit;
-  font-size: 11px;
-  line-height: 1;
-}
-
-.rates-toggle:hover { color: var(--accent); }
-.rates-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
-
-tr.rates-row > td { background: var(--bg); padding: 10px 14px 12px; }
-
-.rates-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 8px 14px;
-}
-
-.rate-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.rate-field label { font-size: 11.5px; color: var(--ink-soft); }
-.rate-field input { width: 76px; font-family: var(--mono); font-size: 12.5px; padding: 2px 5px; text-align: right; }
-/* An overridden rate should be visibly yours rather than the model's. */
-.rate-field input.is-override { border-color: var(--accent); color: var(--accent); }
-.rates-note { margin: 8px 0 0; font-size: 11.5px; color: var(--ink-faint); }
-
-/* A rate sitting in the table reads as a number first and an input second —
-   it is pre-filled with the model's answer, and most of them are never touched. */
-/* Spinners cost about a character of width in every one of these cells and are
-   useless for a rate — nobody nudges yards per target by the arrow keys. */
-.share-input::-webkit-outer-spin-button,
-.share-input::-webkit-inner-spin-button,
-.rate-cell::-webkit-outer-spin-button,
-.rate-cell::-webkit-inner-spin-button {
-  appearance: none;
-  margin: 0;
-}
-
-.share-input,
-.rate-cell { -moz-appearance: textfield; }
-
-.rate-cell {
-  width: 62px;
-  font-family: var(--mono);
-  font-size: 12.5px;
-  padding: 2px 4px;
-  text-align: right;
-  border-color: transparent;
-  background: transparent;
-  color: var(--ink-soft);
-}
-
-.rate-cell:hover { border-color: var(--line-strong); background: var(--panel); }
-.rate-cell:focus { border-color: var(--accent); background: var(--panel); color: var(--ink); }
-.rate-cell.is-override { color: var(--accent); border-color: var(--accent); }
-
-/* -- player card --------------------------------------------------------- */
-
+/* A name has to look like it does something. It was styled as plain bold ink
+   and only revealed itself on hover, which hid the one thing on the page that
+   tells you whether a number you are about to type is reasonable. */
 .player-link {
   background: none;
   border: 0;
@@ -515,27 +587,65 @@ tr.rates-row > td { background: var(--bg); padding: 10px 14px 12px; }
   color: var(--ink);
   cursor: pointer;
   text-align: left;
+  border-bottom: 1px dotted var(--line-strong);
 }
 
-.player-link:hover { color: var(--accent); text-decoration: underline; }
+.player-link:hover { color: var(--accent); border-bottom-color: var(--accent); }
 .player-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 
-#player-dialog {
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
+/* The row whose history is open, so the panel is visibly about this player. */
+tr.is-open > td,
+tr.is-open > td.na { background: var(--accent-soft); }
+tr.is-open .player-link { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Docked, not modal: this is reference material for a number you are about to
+   type, so it has to be readable while you type it. The page gives up width
+   rather than being covered. */
+.player-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(440px, 92vw);
+  overflow-y: auto;
   background: var(--panel);
-  color: var(--ink);
-  padding: 0;
-  max-width: 62rem;
-  width: calc(100vw - 3rem);
-  box-shadow: 0 20px 60px -20px rgba(0, 0, 0, .4);
+  border-left: 1px solid var(--line-strong);
+  box-shadow: -14px 0 34px -22px rgba(0, 0, 0, .55);
+  z-index: 30;
 }
 
-#player-dialog::backdrop { background: rgba(10, 12, 16, .45); }
-#player-dialog .hint { padding: 0 16px; margin: 0 0 10px; }
-#player-dialog .table-scroll { padding: 0 16px 16px; }
-#player-dialog th { position: static; }
+body.with-panel main { max-width: none; margin-right: min(452px, 92vw); }
+body.with-panel .topbar,
+body.with-panel .banner,
+body.with-panel .intro { padding-right: calc(min(440px, 92vw) + 20px); }
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 14px 16px 10px;
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  z-index: 1;
+}
+
+.panel-head h2 { font-size: 14px; font-weight: 650; margin: 0; }
+.player-panel .hint { padding: 12px 16px 0; margin: 0 0 10px; }
+.player-panel .table-scroll { padding: 0 16px 16px; }
+.player-panel th { position: static; }
 /* The newest season is the one being projected from. */
-#player-dialog tbody tr:first-child { background: var(--accent-soft); }
-#player-dialog tbody tr:first-child td { font-weight: 600; }
+.player-panel tbody tr:first-child { background: var(--accent-soft); }
+.player-panel tbody tr:first-child td { font-weight: 600; }
 .per-game { color: var(--ink-faint); font-size: 11px; margin-left: 3px; }
+
+/* On a narrow window the panel covers the page rather than squeezing it; there
+   is no width left to give up. */
+@media (max-width: 900px) {
+  body.with-panel main,
+  body.with-panel .topbar,
+  body.with-panel .banner,
+  body.with-panel .intro { margin-right: 0; padding-right: 20px; }
+}

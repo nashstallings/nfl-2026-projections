@@ -78,38 +78,57 @@ No credentials needed for that — it reads nflverse's public releases.
 
 ## Using it
 
-**Team tab.** Pick a team. The three boxes at the top are its 2026 volume —
-pass attempts, carries, targets — starting at last season's totals, with the
-amount **vacated** noted underneath and the league's min, median and max on a
-scale below, so you can see whether a number is high before you commit to it.
+**Team tab.** Pick a team — every one of the 32 opens on its 2025 season, so
+there is somewhere to start rather than a blank sheet. A tick beside a team in
+the dropdown means you have changed something there.
 
-Below that is the roster, and it is a spreadsheet: you type the numbers. Pass
+The three boxes at the top are its 2026 volume — pass attempts, carries,
+targets — starting at last season's totals, with the amount **vacated** noted
+underneath and the league's min, median and max on a scale below, so you can see
+whether a number is high before you commit to it.
+
+Below that is the roster, and it is a spreadsheet: you type the raw counts. Pass
 attempts, passing yards, touchdowns, interceptions, carries, rushing yards,
-targets, receptions, receiving yards, fumbles — the raw counts, seeded with what
-each returning player actually did on this team in 2025. Newcomers and rookies
-start empty, because nothing about their usage is known yet and that is a
-decision rather than a default.
+targets, receptions, receiving yards, fumbles — seeded with what each returning
+player actually did on this team in 2025. Newcomers and rookies start empty,
+because nothing about their usage is known yet and that is a decision rather
+than a default.
 
-**Y/A, Y/C, Y/T and Catch %** are calculated from what you typed and shown in
-grey. They are there to tell you whether the line you just wrote is plausible —
-1,400 yards on 150 targets is 9.33 a target, which is a good season; on 100
-targets it is 14.0, which is nobody's season.
+**2026 and +/− sit fourth and fifth from the left**, beside the name, and stay
+frozen there when the table scrolls sideways. They are the answer: what this
+projection scores him, and how that compares to last season. Typing a number
+moves both immediately.
+
+**Y/A, Y/C, Y/T and catch rate** are calculated from what you typed and printed
+under the box that produces them — yards per target under receiving yards, catch
+rate under receptions. They tell you whether the line you just wrote is
+plausible: 1,400 yards on 150 targets is 9.33 a target, which is a good season;
+on 100 targets it is 14.0, which is nobody's season.
+
+Columns a position never uses are left blank rather than dashed, and the
+**Passing / Rushing / Receiving** bands above the headers say which is which.
 
 The **Allocated** row sits directly under the headers, where the budget stays in
-view while you spend it. Attempts, carries and targets are compared against the
-team volume above: amber when there is volume nobody has been given, red when
-you have handed out more than the offence is going to run. Neither gets
-corrected for you — the correction is the projection.
+view while you spend it. Attempts, carries and targets carry the volume they
+have to come out of in the cell — `487` with `161 left` beneath it — amber when
+there is volume nobody has been given, red when you have handed out more than
+the offence is going to run. Neither gets corrected for you; the correction is
+the projection.
 
-**Board tab.** Every team you have projected, ranked against each other by
-position. QB1 through QB12 is a decision; 285 points on its own is not.
+Most of a roster will not touch the ball. Players with no projected volume and
+no 2025 season are collapsed behind a **Show N more** row at the bottom, so the
+ten that decide a team are not diluted by the twelve that do not.
 
-Rows in grey are running on a **league-median rate** rather than the player's
-own, for a rate his own volume actually reaches — the model saying it is
-guessing about something that matters. A receiver has no passing rates and
-never will, but he is never given a pass attempt either, so that gap does not
-grey his row. Rookies given volume are always grey; so are backups asked to do
-something they have no history of.
+**Click a name** for his last four seasons, which opens beside the table rather
+than over it — it is reference for the number you are about to type, so it stays
+readable while you type it. Clicking the same name again closes it, as does
+Escape.
+
+**Board tab.** All 32 teams, ranked against each other by position, from the
+moment you open it. Teams you have tuned carry a tick; the rest are running on
+their 2025 baseline, which is the thing you tune away from. Switch **Teams** to
+*Only ones I've tuned* to see just your own work. QB1 through QB12 is a
+decision; 285 points on its own is not.
 
 ## Saving
 

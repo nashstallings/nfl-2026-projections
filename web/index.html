@@ -23,13 +23,25 @@
         <span class="save-state" id="save-state">Saved locally</span>
         <span class="identity" id="identity" hidden></span>
         <div id="signin-button"></div>
-        <button class="btn btn-ghost" id="load-btn" title="Reopen a projection saved to BigQuery">Load</button>
+        <button class="btn btn-ghost" id="load-btn" title="Reopen a projection you saved">Load</button>
         <button class="btn btn-ghost" id="export-btn" title="Download as JSON">Export</button>
-        <button class="btn btn-primary" id="save-btn">Save to BigQuery</button>
+        <button class="btn btn-primary" id="save-btn" title="Save this projection to BigQuery">Save</button>
       </div>
     </header>
 
     <div class="banner" id="banner" hidden></div>
+
+    <!-- Shown until dismissed. Every team already holds last season's numbers,
+         so there is somewhere to start rather than a blank sheet. -->
+    <div class="intro" id="intro" hidden>
+      <div>
+        <b>Every team starts at its 2025 season.</b> Pick one you know, set the
+        three volume numbers, then hand out the touches — the Board ranks all 32
+        teams from the moment you open it. Click any player's name for his last
+        four seasons.
+      </div>
+      <button class="btn btn-ghost" id="intro-dismiss">Got it</button>
+    </div>
 
     <main>
       <!-- Team workbench -->
@@ -48,6 +60,7 @@
             </select>
           </label>
           <button class="btn btn-ghost" id="reset-team">Reset to 2025</button>
+          <span class="tuned-count" id="tuned-count"></span>
         </div>
 
         <section class="panel">
@@ -65,34 +78,45 @@
           <div class="table-scroll">
             <table class="grid" id="allocation-table">
               <thead>
-                <tr id="allocation-head">
+                <!-- Twelve stat columns read as three decisions when they are
+                     banded; ungrouped they read as twelve. -->
+                <tr class="band-row">
+                  <th class="sticky-col"></th>
+                  <th></th><th></th><th></th><th></th><th></th>
+                  <th class="band" colspan="4">Passing</th>
+                  <th class="band" colspan="3">Rushing</th>
+                  <th class="band" colspan="4">Receiving</th>
+                  <th class="band"></th>
+                </tr>
+                <tr class="col-row" id="allocation-head">
                   <th class="sticky-col sortable" data-sort="player" data-type="text">Player</th>
                   <th class="sortable" data-sort="position" data-type="text">Pos</th>
-                  <th class="num sortable" data-sort="last">2025</th>
+                  <th class="num sortable" data-sort="last" title="What he scored in 2025, in the scoring selected above">2025</th>
+                  <th class="num sortable key-col" data-sort="pts" title="What this projection scores him in 2026">2026</th>
+                  <th class="num sortable" data-sort="delta" title="2026 against 2025">+/−</th>
+                  <th class="num sortable" data-sort="ppg" title="Points per game over 17">PPG</th>
                   <th class="num sortable" data-sort="pass_attempts">Att</th>
-                  <th class="num sortable" data-sort="passing_yards">Pa yds</th>
-                  <th class="num sortable" data-sort="passing_tds">Pa TD</th>
+                  <th class="num sortable" data-sort="passing_yards">Yds</th>
+                  <th class="num sortable" data-sort="passing_tds">TD</th>
                   <th class="num sortable" data-sort="interceptions">INT</th>
                   <th class="num sortable" data-sort="carries">Car</th>
-                  <th class="num sortable" data-sort="rushing_yards">Ru yds</th>
-                  <th class="num sortable" data-sort="rushing_tds">Ru TD</th>
+                  <th class="num sortable" data-sort="rushing_yards">Yds</th>
+                  <th class="num sortable" data-sort="rushing_tds">TD</th>
                   <th class="num sortable" data-sort="targets">Tgt</th>
                   <th class="num sortable" data-sort="receptions">Rec</th>
-                  <th class="num sortable" data-sort="receiving_yards">Re yds</th>
-                  <th class="num sortable" data-sort="receiving_tds">Re TD</th>
+                  <th class="num sortable" data-sort="receiving_yards">Yds</th>
+                  <th class="num sortable" data-sort="receiving_tds">TD</th>
                   <th class="num sortable" data-sort="fumbles_lost">Fum</th>
-                  <th class="num derived sortable" data-sort="yards_per_attempt" title="Passing yards per attempt — calculated">Y/A</th>
-                  <th class="num derived sortable" data-sort="yards_per_carry" title="Rushing yards per carry — calculated">Y/C</th>
-                  <th class="num derived sortable" data-sort="yards_per_target" title="Receiving yards per target — calculated">Y/T</th>
-                  <th class="num derived sortable" data-sort="catch_rate" title="Receptions per target — calculated">Catch %</th>
-                  <th class="num sortable" data-sort="pts">Pts</th>
-                  <th class="num sortable" data-sort="ppg">PPG</th>
                 </tr>
                 <tr id="allocation-totals" class="totals-row"></tr>
               </thead>
               <tbody id="allocation-body"></tbody>
             </table>
           </div>
+          <p class="table-note">
+            Click a name for his last four seasons. The small figures under the
+            yardage and reception boxes are rates calculated from what you typed.
+          </p>
         </section>
       </section>
 
@@ -107,6 +131,13 @@
               <option value="RB">RB</option>
               <option value="WR">WR</option>
               <option value="TE">TE</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Teams</span>
+            <select id="board-teams">
+              <option value="all">All 32</option>
+              <option value="tuned">Only ones I've tuned</option>
             </select>
           </label>
           <label class="field">
@@ -128,14 +159,15 @@
                   <th class="sticky-col sortable" data-sort="player" data-type="text">Player</th>
                   <th class="sortable" data-sort="position" data-type="text">Pos</th>
                   <th class="sortable" data-sort="team" data-type="text">Team</th>
-                  <th class="num sortable" data-sort="games">G</th>
+                  <th class="num sortable key-col" data-sort="pts">2026</th>
+                  <th class="num sortable" data-sort="last">2025</th>
+                  <th class="num sortable" data-sort="delta">+/−</th>
+                  <th class="num sortable" data-sort="ppg">PPG</th>
                   <th class="num sortable" data-sort="att">Att</th>
                   <th class="num sortable" data-sort="car">Car</th>
                   <th class="num sortable" data-sort="rec">Rec</th>
                   <th class="num sortable" data-sort="yds">Yds</th>
                   <th class="num sortable" data-sort="td">TD</th>
-                  <th class="num sortable" data-sort="pts">Pts</th>
-                  <th class="num sortable" data-sort="ppg">PPG</th>
                 </tr>
               </thead>
               <tbody id="board-body"></tbody>
@@ -145,14 +177,16 @@
       </section>
     </main>
 
-    <dialog id="player-dialog">
-      <form method="dialog" class="dialog-head">
+    <!-- A side panel rather than a modal: it is reference material for the
+         number you are about to type, so it has to stay open while you type. -->
+    <aside class="player-panel" id="player-panel" hidden aria-live="polite">
+      <div class="panel-head">
         <h2 id="card-name">Player</h2>
-        <button class="btn btn-ghost" value="cancel">Close</button>
-      </form>
+        <button class="btn btn-ghost" id="card-close" aria-label="Close player history">Close</button>
+      </div>
       <p class="hint" id="card-hint"></p>
       <div class="table-scroll"><table class="grid" id="card-table"></table></div>
-    </dialog>
+    </aside>
 
     <dialog id="saves-dialog">
       <form method="dialog" class="dialog-head">
