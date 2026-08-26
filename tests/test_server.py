@@ -14,6 +14,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -218,3 +220,46 @@ class TestUnauthenticatedExposure:
     def test_ipv6_loopback_is_still_local(self):
         with configured(host="::1", google_client_id="", api_token=""):
             server.refuse_unauthenticated_exposure()
+
+
+class TestCaching:
+    """A deploy has to be visible on the next reload.
+
+    Without an explicit Cache-Control a browser invents its own freshness from
+    the file's age, so a page that had been up for a day kept serving yesterday's
+    app.js for hours after a deploy — silently, with no error anywhere.
+    """
+
+    @pytest.mark.parametrize(
+        "path", ["/", "/js/app.js", "/css/app.css", "/api/config", "/api/healthz"]
+    )
+    def test_everything_must_be_revalidated(self, client, path):
+        assert client.get(path).headers["cache-control"] == "no-cache"
+
+    def test_revalidating_an_unchanged_file_costs_no_body(self, client):
+        first = client.get("/js/app.js")
+        again = client.get("/js/app.js", headers={"If-None-Match": first.headers["etag"]})
+        assert again.status_code == 304
+        assert not again.content
+
+    def test_a_response_that_sets_its_own_policy_keeps_it(self):
+        """The middleware fills a gap; it does not overrule a deliberate choice.
+
+        Attached to a bare app rather than exercised through this one, because
+        every route here wants revalidation and none would catch a regression
+        from setdefault to plain assignment.
+        """
+        app = FastAPI()
+        app.middleware("http")(server.revalidate)
+
+        @app.get("/long-lived")
+        def long_lived():
+            return JSONResponse({}, headers={"Cache-Control": "max-age=31536000"})
+
+        @app.get("/unstated")
+        def unstated():
+            return JSONResponse({})
+
+        client = TestClient(app)
+        assert client.get("/long-lived").headers["cache-control"] == "max-age=31536000"
+        assert client.get("/unstated").headers["cache-control"] == "no-cache"

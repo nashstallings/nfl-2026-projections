@@ -37,6 +37,28 @@ DATA_DIR = ROOT / "data"
 app = FastAPI(title="NFL 2026 Projections", docs_url=None, redoc_url=None)
 
 
+@app.middleware("http")
+async def revalidate(request, call_next):
+    """Make the browser ask before reusing anything it has cached.
+
+    Starlette's StaticFiles sends an ETag and a Last-Modified and no
+    Cache-Control at all, which is not "do not cache" — with no explicit
+    freshness a browser is free to invent one, and does: roughly a tenth of the
+    age of the file. A deploy of a page that had been up for a day therefore did
+    not show up for hours, because the browser never asked for app.js again. It
+    served the copy it already had and reported no error, which is the worst
+    shape a caching bug can take.
+
+    `no-cache` does not mean "do not store" — it means "revalidate before use".
+    The ETags are already there, so a reload costs one conditional request per
+    file and gets a 304 with no body back. That is the right trade for an app
+    whose whole point is that the numbers on screen are current.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("Cache-Control", "no-cache")
+    return response
+
+
 def require_identity(authorization: str | None) -> str:
     """Identify a caller allowed to write, or refuse with a reason they can act on."""
     try:
