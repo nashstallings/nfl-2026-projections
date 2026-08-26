@@ -504,14 +504,22 @@ def main(argv: list[str] | None = None) -> int:
         "generated_at": baseline["generated_at"],
         "players": season_history(seasons, args.cache_dir, keep),
     }
-    args.history_out.parent.mkdir(parents=True, exist_ok=True)
-    args.history_out.write_text(json.dumps(history, separators=(",", ":")), encoding="utf-8")
-    logger.info(
-        "wrote %s — %s players over %s",
-        args.history_out,
-        len(history["players"]),
-        ", ".join(str(season) for season in seasons),
-    )
+    # Same guard as the baseline, and it matters more here: past seasons never
+    # change, so without it every run would rewrite half a megabyte to move a
+    # timestamp — and on a schedule, commit and redeploy for it daily.
+    if args.history_out.exists() and not _changed(args.history_out, history):
+        logger.info("%s is already current", args.history_out)
+    else:
+        args.history_out.parent.mkdir(parents=True, exist_ok=True)
+        args.history_out.write_text(
+            json.dumps(history, separators=(",", ":")), encoding="utf-8"
+        )
+        logger.info(
+            "wrote %s — %s players over %s",
+            args.history_out,
+            len(history["players"]),
+            ", ".join(str(season) for season in seasons),
+        )
 
     # Rosters change in bursts — a cutdown, a trade — and are static in between.
     # Rewriting an identical file would change only the timestamp, and since a

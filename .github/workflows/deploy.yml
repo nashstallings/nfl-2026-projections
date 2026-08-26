@@ -14,6 +14,10 @@ on:
       - "pyproject.toml"
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
+  # The scheduled refresh calls this directly. It has to: a push made with
+  # GITHUB_TOKEN deliberately does not trigger the push trigger above, so a
+  # rebuilt baseline would otherwise sit in main and never reach the service.
+  workflow_call:
 
 # Never let an older build land on top of a newer one.
 concurrency:

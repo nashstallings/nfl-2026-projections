@@ -1,0 +1,91 @@
+name: Refresh baseline
+
+# nflverse republishes its rosters daily. This checks whether anything actually
+# moved — a trade, a signing, a cut — and rebuilds only when it did.
+#
+# 12:00 UTC is early morning US time, after nflverse's overnight rebuild has
+# landed, so a trade announced yesterday is in today's run.
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+
+# A slow rebuild must never race the next day's.
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # commits the rebuilt baseline
+    outputs:
+      changed: ${{ steps.rebuild.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      # build_baseline is deliberately stdlib-only, so there is nothing to
+      # install: no dependency resolution stands between a trade and the data.
+      - name: Rebuild from nflverse
+        id: rebuild
+        env:
+          PYTHONPATH: src
+        run: |
+          cp data/baseline.json "${RUNNER_TEMP}/baseline.before.json"
+          python -m projections.build_baseline
+
+          # The builder rewrites nothing when the data is identical, timestamp
+          # included, so an unchanged working tree is the whole test.
+          if git diff --quiet -- data/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::nflverse has no roster changes since the last build"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          python -m projections.roster_diff \
+            "${RUNNER_TEMP}/baseline.before.json" data/baseline.json \
+            > "${RUNNER_TEMP}/summary.txt"
+          cat "${RUNNER_TEMP}/summary.txt" >> "$GITHUB_STEP_SUMMARY"
+
+      # Nothing else stands between nflverse and the live dashboard, so an
+      # upstream file that is truncated or half-published must not be committed
+      # and deployed unattended.
+      - name: Sanity-check the rebuilt data
+        if: steps.rebuild.outputs.changed == 'true'
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m projections.check_baseline \
+            "${RUNNER_TEMP}/baseline.before.json" data/baseline.json
+
+      - name: Commit
+        if: steps.rebuild.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git commit -F - <<EOF
+          Refresh baseline from nflverse
+
+          $(cat "${RUNNER_TEMP}/summary.txt")
+          EOF
+          git push origin HEAD:main
+
+  # A push made with GITHUB_TOKEN does not trigger deploy.yml's push trigger —
+  # that is GitHub's guard against workflows looping. Calling the deploy
+  # directly is the supported way through it.
+  deploy:
+    needs: rebuild
+    if: needs.rebuild.outputs.changed == 'true'
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      contents: read
+      id-token: write

@@ -198,16 +198,19 @@ whichever team a player finished on misstates both.
 | Path | What's in it |
 | --- | --- |
 | `src/projections/build_baseline.py` | Fetches nflverse, writes `data/baseline.json`. |
+| `src/projections/check_baseline.py` | Refuses a rebuild that looks half-published. |
+| `src/projections/roster_diff.py` | Turns two baselines into "who moved where". |
 | `src/projections/server.py` | Serves the page; writes saves to BigQuery. |
 | `src/projections/auth.py` | Verifies Google sign-in against the allow list. |
 | `src/projections/bigquery_store.py` | Row shape and queries for saved projections. |
 | `web/js/projection.js` | The model. Pure functions, no DOM, no globals. |
 | `web/js/app.js` | The dashboard. |
 | `web/js/auth.js` | Google sign-in in the page. |
-| `tests/` | 30 model tests (node), 41 server and auth tests (pytest). |
+| `tests/` | 64 model tests (node), 70 server, auth, and data tests (pytest). |
 | `infra/bootstrap.sh` | Creates the BigQuery dataset and table. |
 | `infra/deploy.sh` | Deploys to Cloud Run by hand. |
 | `infra/setup-github-oidc.sh` | Lets Actions deploy without a stored key. |
+| `.github/workflows/refresh.yml` | Daily nflverse poll; rebuilds and redeploys on a change. |
 
 ## Checks
 
@@ -225,5 +228,18 @@ stats, 2026 rosters, and schedules, pulled from its public GitHub releases and
 cached in `.cache/`. Delete that directory to refresh. `data/baseline.json` is
 committed so the dashboard runs without rebuilding it.
 
-Rosters move. Rebuild the baseline after cutdowns, and after any trade you care
-about, or the vacated numbers are describing a roster that no longer exists.
+Rosters move, and a stale baseline describes a roster that no longer exists.
+`.github/workflows/refresh.yml` handles that: every morning at 12:00 UTC it
+rebuilds against nflverse, and if anything actually moved it commits the new
+baseline and redeploys. The commit message says who moved where, so the history
+reads as a transaction log rather than a wall of minified JSON. Nothing is
+committed when the data is unchanged.
+
+Two things guard the unattended path. `check_baseline.py` refuses a rebuild
+that is missing teams or has shed a tenth of the league, which is the shape a
+truncated upstream file takes. And the deploy is invoked with `workflow_call`
+rather than left to the push trigger, because a push made with `GITHUB_TOKEN`
+deliberately does not start another workflow.
+
+You can also run it yourself — Actions -> Refresh baseline -> Run workflow —
+or rebuild locally with `python -m projections.build_baseline`.
